@@ -28,34 +28,67 @@ try {
 }
 
 async function run(domain: string | undefined, action: string | undefined, args: string[]): Promise<unknown> {
+  const commandDomain = domain === "server" ? "env" : domain;
   if (!domain || domain === "--help" || domain === "-h" || domain === "help") return usage();
-  if (domain === "completion" && action === "zsh") return zshCompletion();
-  if (domain === "completion" && action === "install") return installCompletion(required(args[0], "shell"), args.slice(1));
-  if (domain === "java" && action === "list") {
+  if (commandDomain === "completion" && action === "zsh") return zshCompletion();
+  if (commandDomain === "completion" && action === "install") return installCompletion(required(args[0], "shell"), args.slice(1));
+  if (commandDomain === "java" && action === "list") {
     const installations = await listJavaInstallations();
     if (args.includes("--refs")) {
       return installations.map((java) => java.ref).filter(Boolean).join("\n");
     }
     return installations;
   }
-  if (domain === "java" && action === "info") return getJavaInfo(args[0] ?? "system");
-  if (domain === "java" && action === "validate") {
+  if (commandDomain === "java" && action === "info") return getJavaInfo(args[0] ?? "system");
+  if (commandDomain === "java" && action === "validate") {
     return validateJavaForMinecraft(valueAfter(args, "--java") ?? args[1], required(args[0], "minecraft version"));
   }
-  if (domain === "env" && action === "list") {
+  if (commandDomain === "env" && action === "create") {
+    return manager.create({
+      id: valueAfter(args, "--id"),
+      base_dir: valueAfter(args, "--base-dir"),
+      persistent: args.includes("--persistent"),
+      java_ref: valueAfter(args, "--java"),
+      java_args: valuesAfter(args, "--java-arg"),
+      memory: {
+        xms: valueAfter(args, "--xms"),
+        xmx: valueAfter(args, "--xmx")
+      },
+      host: valueAfter(args, "--host"),
+      port: numberAfter(args, "--port"),
+      accept_eula: !args.includes("--no-eula"),
+      start: args.includes("--start"),
+      rcon: args.includes("--rcon")
+        ? {
+          enabled: true,
+          port: numberAfter(args, "--rcon-port"),
+          password: valueAfter(args, "--rcon-password")
+        }
+        : undefined,
+      core_ref: {
+        core_id: valueAfter(args, "--core-id"),
+        loader: valueAfter(args, "--loader") ?? (valueAfter(args, "--path") || valueAfter(args, "--url") ? "custom" : undefined),
+        minecraft_version: valueAfter(args, "--minecraft-version") ?? valueAfter(args, "--mc"),
+        build: valueAfter(args, "--build"),
+        path: valueAfter(args, "--path"),
+        url: valueAfter(args, "--url")
+      }
+    });
+  }
+  if (commandDomain === "env" && action === "list") {
     const envs = await manager.list();
     if (args.includes("--ids")) {
       return envs.map((env) => env.id).join("\n");
     }
     return envs;
   }
-  if (domain === "env" && (action === "info" || action === "get")) return manager.get(required(args[0], "env id"));
-  if (domain === "env" && action === "start") return manager.start(required(args[0], "env id"));
-  if (domain === "env" && action === "stop") return manager.stop(required(args[0], "env id"));
-  if (domain === "env" && action === "restart") return manager.restart(required(args[0], "env id"));
-  if (domain === "env" && action === "destroy") return manager.destroy(required(args[0], "env id"));
-  if (domain === "env" && action === "logs") {
-    const envId = required(args[0], "env id");
+  if (commandDomain === "env" && (action === "info" || action === "get")) return manager.get(required(args[0], "server id"));
+  if (commandDomain === "env" && action === "start") return manager.start(required(args[0], "server id"));
+  if (commandDomain === "env" && action === "stop") return manager.stop(required(args[0], "server id"));
+  if (commandDomain === "env" && action === "restart") return manager.restart(required(args[0], "server id"));
+  if (commandDomain === "env" && action === "destroy") return manager.destroy(required(args[0], "server id"));
+  if (commandDomain === "env" && action === "logs") {
+    const envId = required(args[0], "server id");
     const fromLine = numberAfter(args, "--from-line");
     const toLine = numberAfter(args, "--to-line");
     const offset = numberAfter(args, "--offset");
@@ -66,48 +99,48 @@ async function run(domain: string | undefined, action: string | undefined, args:
     }
     return manager.tailLog(envId, numberAfter(args, "--tail") ?? 120, file);
   }
-  if (domain === "env" && action === "files") return manager.listFiles(required(args[0], "env id"), args[1]);
-  if (domain === "env" && action === "put") {
-    return manager.putFile(required(args[0], "env id"), required(args[1], "target path"), {
+  if (commandDomain === "env" && action === "files") return manager.listFiles(required(args[0], "server id"), args[1]);
+  if (commandDomain === "env" && action === "put") {
+    return manager.putFile(required(args[0], "server id"), required(args[1], "target path"), {
       content: valueAfter(args, "--content"),
       source_path: valueAfter(args, "--source"),
       overwrite: args.includes("--overwrite")
     });
   }
-  if (domain === "env" && action === "add-plugin") {
-    return manager.addPlugin(required(args[0], "env id"), required(args[1], "plugin path"), valueAfter(args, "--name"));
+  if (commandDomain === "env" && action === "add-plugin") {
+    return manager.addPlugin(required(args[0], "server id"), required(args[1], "plugin path"), valueAfter(args, "--name"));
   }
-  if (domain === "env" && action === "remove-file") {
-    return manager.removeFile(required(args[0], "env id"), required(args[1], "target path"));
+  if (commandDomain === "env" && action === "remove-file") {
+    return manager.removeFile(required(args[0], "server id"), required(args[1], "target path"));
   }
-  if (domain === "env" && action === "events") return manager.getEvents(required(args[0], "env id"));
-  if (domain === "env" && action === "wait-ready") {
-    return manager.waitReady(required(args[0], "env id"), numberAfter(args, "--timeout-ms"));
+  if (commandDomain === "env" && action === "events") return manager.getEvents(required(args[0], "server id"));
+  if (commandDomain === "env" && action === "wait-ready") {
+    return manager.waitReady(required(args[0], "server id"), numberAfter(args, "--timeout-ms"));
   }
-  if (domain === "env" && action === "command") {
-    return manager.sendCommand(required(args[0], "env id"), required(args[1], "command"));
+  if (commandDomain === "env" && action === "command") {
+    return manager.sendCommand(required(args[0], "server id"), required(args[1], "command"));
   }
-  if (domain === "core" && action === "list") {
+  if (commandDomain === "core" && action === "list") {
     const cores = await manager.coreCache.list();
     if (args.includes("--ids")) {
       return cores.map((core) => core.id).join("\n");
     }
     return cores;
   }
-  if (domain === "core" && (action === "info" || action === "get")) return manager.coreCache.get(required(args[0], "core id"));
-  if (domain === "core" && action === "providers") return CORE_PROVIDERS;
-  if (domain === "core" && action === "search") {
+  if (commandDomain === "core" && (action === "info" || action === "get")) return manager.coreCache.get(required(args[0], "core id"));
+  if (commandDomain === "core" && action === "providers") return CORE_PROVIDERS;
+  if (commandDomain === "core" && action === "search") {
     return searchCores({
       loader: args[0],
       minecraft_version: args[1],
       build: args[2]
     }, manager.coreCache);
   }
-  if (domain === "core" && action === "download") {
+  if (commandDomain === "core" && action === "download") {
     const [loader, minecraft_version, build] = args;
     return resolveCore({ loader, minecraft_version, build: build ?? "latest" }, manager.coreCache);
   }
-  if (domain === "core" && action === "import") {
+  if (commandDomain === "core" && action === "import") {
     return resolveCore({
       loader: valueAfter(args, "--loader") ?? "custom",
       minecraft_version: valueAfter(args, "--minecraft-version") ?? valueAfter(args, "--mc") ?? "unknown",
@@ -115,8 +148,8 @@ async function run(domain: string | undefined, action: string | undefined, args:
       url: valueAfter(args, "--url")
     }, manager.coreCache);
   }
-  if (domain === "core" && action === "verify") return manager.coreCache.verify(required(args[0], "core id"));
-  if (domain === "core" && (action === "remove" || action === "delete")) return manager.coreCache.remove(required(args[0], "core id"));
+  if (commandDomain === "core" && action === "verify") return manager.coreCache.verify(required(args[0], "core id"));
+  if (commandDomain === "core" && (action === "remove" || action === "delete")) return manager.coreCache.remove(required(args[0], "core id"));
   return usage();
 }
 
@@ -141,21 +174,24 @@ function usage(): string {
     "  craft-runner core import --url <https-url> [--minecraft-version <version>]",
     "  craft-runner core verify <id>",
     "  craft-runner core remove <id>",
-    "  craft-runner env list",
-    "  craft-runner env info <id>",
-    "  craft-runner env start <id>",
-    "  craft-runner env stop <id>",
-    "  craft-runner env restart <id>",
-    "  craft-runner env destroy <id>",
-    "  craft-runner env logs <id> [--tail <n>]",
-    "  craft-runner env logs <id> --from-line <n> [--to-line <n>]",
-    "  craft-runner env files <id> [path]",
-    "  craft-runner env put <id> <target> (--content <text>|--source <path>) [--overwrite]",
-    "  craft-runner env add-plugin <id> <jar> [--name <file.jar>]",
-    "  craft-runner env remove-file <id> <target>",
-    "  craft-runner env events <id>",
-    "  craft-runner env wait-ready <id> [--timeout-ms <ms>]",
-    "  craft-runner env command <id> <command>",
+    "  craft-runner server create --id <id> --core-id <core-id> [--start]",
+    "  craft-runner server create --id <id> --loader <loader> --minecraft-version <version> [--build <build>]",
+    "  craft-runner server create --id <id> --path <server.jar> --minecraft-version <version>",
+    "  craft-runner server list",
+    "  craft-runner server info <id>",
+    "  craft-runner server start <id>",
+    "  craft-runner server stop <id>",
+    "  craft-runner server restart <id>",
+    "  craft-runner server destroy <id>",
+    "  craft-runner server logs <id> [--tail <n>]",
+    "  craft-runner server files <id> [path]",
+    "  craft-runner server put <id> <target> (--content <text>|--source <path>) [--overwrite]",
+    "  craft-runner server add-plugin <id> <jar> [--name <file.jar>]",
+    "  craft-runner server remove-file <id> <target>",
+    "  craft-runner server events <id>",
+    "  craft-runner server wait-ready <id> [--timeout-ms <ms>]",
+    "  craft-runner server command <id> <command>",
+    "  craft-runner env ...    (alias for server)",
     "  craft-runner completion zsh",
     "  craft-runner completion install zsh [--dir <dir>]"
   ].join("\n");
@@ -208,6 +244,16 @@ async function isWritableDirectory(dir: string): Promise<boolean> {
 function valueAfter(args: string[], flag: string): string | undefined {
   const index = args.indexOf(flag);
   return index >= 0 ? args[index + 1] : undefined;
+}
+
+function valuesAfter(args: string[], flag: string): string[] {
+  const values: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] === flag && args[index + 1]) {
+      values.push(args[index + 1]);
+    }
+  }
+  return values;
 }
 
 function numberAfter(args: string[], flag: string): number | undefined {
@@ -304,7 +350,7 @@ function formatResult(domain: string | undefined, action: string | undefined, re
     return result ? "Core removed." : "Core not found.";
   }
 
-  if (domain === "env" && action === "list" && Array.isArray(result)) {
+  if ((domain === "env" || domain === "server") && action === "list" && Array.isArray(result)) {
     return result.length === 0 ? "No environments found." : table(
       ["ID", "STATUS", "LOADER", "MC", "PORT", "PID"],
       result.map((env) => [
@@ -318,15 +364,15 @@ function formatResult(domain: string | undefined, action: string | undefined, re
     );
   }
 
-  if (domain === "env" && ["info", "get", "start", "stop", "restart"].includes(action ?? "") && isRecord(result)) {
+  if ((domain === "env" || domain === "server") && ["create", "info", "get", "start", "stop", "restart"].includes(action ?? "") && isRecord(result)) {
     return formatEnvironment(result);
   }
 
-  if (domain === "env" && action === "destroy" && isRecord(result)) {
-    return `Environment destroyed: ${result.id}\nDeleted files: ${result.deleted_files ? "yes" : "no"}`;
+  if ((domain === "env" || domain === "server") && action === "destroy" && isRecord(result)) {
+    return `Server destroyed: ${result.id}\nDeleted files: ${result.deleted_files ? "yes" : "no"}`;
   }
 
-  if (domain === "env" && action === "logs" && isRecord(result)) {
+  if ((domain === "env" || domain === "server") && action === "logs" && isRecord(result)) {
     const lines = Array.isArray(result.lines) ? result.lines : undefined;
     return [
       `Log: ${result.file}`,
@@ -334,32 +380,32 @@ function formatResult(domain: string | undefined, action: string | undefined, re
     ].join("\n");
   }
 
-  if (domain === "env" && action === "files" && Array.isArray(result)) {
+  if ((domain === "env" || domain === "server") && action === "files" && Array.isArray(result)) {
     return result.length === 0 ? "No files found." : result.join("\n");
   }
 
-  if (domain === "env" && ["put", "add-plugin"].includes(action ?? "") && isRecord(result)) {
+  if ((domain === "env" || domain === "server") && ["put", "add-plugin"].includes(action ?? "") && isRecord(result)) {
     return `Wrote ${result.bytes} bytes to ${result.target}`;
   }
 
-  if (domain === "env" && action === "remove-file" && isRecord(result)) {
+  if ((domain === "env" || domain === "server") && action === "remove-file" && isRecord(result)) {
     return `Removed ${result.removed}`;
   }
 
-  if (domain === "env" && action === "events" && Array.isArray(result)) {
+  if ((domain === "env" || domain === "server") && action === "events" && Array.isArray(result)) {
     return result.length === 0 ? "No events found." : table(
       ["AT", "TYPE", "MESSAGE"],
       result.map((event) => [stringValue(event.at), stringValue(event.type), stringValue(event.message)])
     );
   }
 
-  if (domain === "env" && action === "wait-ready" && isRecord(result)) {
+  if ((domain === "env" || domain === "server") && action === "wait-ready" && isRecord(result)) {
     return result.ready
       ? `Environment is ready.${result.matched ? `\nMatched: ${result.matched}` : ""}`
       : "Environment was not ready before timeout.";
   }
 
-  if (domain === "env" && action === "command" && isRecord(result)) {
+  if ((domain === "env" || domain === "server") && action === "command" && isRecord(result)) {
     return stringValue(result.response);
   }
 
@@ -387,7 +433,7 @@ function formatCore(core: Record<string, unknown>): string {
 }
 
 function formatEnvironment(env: Record<string, unknown>): string {
-  return details("Environment", [
+  return details("Server", [
     ["ID", env.id],
     ["Status", env.status],
     ["Loader", env.loader],
@@ -463,7 +509,8 @@ _craft_runner() {
   commands=(
     'java:discover and inspect Java installations'
     'core:manage cached Minecraft server cores'
-    'env:manage local test environments'
+    'server:manage local Minecraft test servers'
+    'env:alias for server'
     'completion:generate shell completion scripts'
     'help:show command help'
   )
@@ -484,6 +531,7 @@ _craft_runner() {
     'delete:remove a cached core'
   )
   env_commands=(
+    'create:create a test server'
     'list:list environments'
     'info:show environment metadata'
     'start:start an environment'
@@ -548,12 +596,36 @@ _craft_runner() {
           ;;
       esac
       ;;
-    env)
+    env|server)
       if (( CURRENT == 3 )); then
         _describe 'environment command' env_commands
         return
       fi
       case "$words[3]" in
+        create)
+          _arguments \
+            '--id[server id]' \
+            '--core-id[cached core id]:core id:_craft_runner_core_ids' \
+            '--loader[server loader]:loader:->loaders' \
+            '--minecraft-version[Minecraft version]' \
+            '--mc[Minecraft version]' \
+            '--build[core build]' \
+            '--path[custom server jar]:jar:_files -g "*.jar"' \
+            '--url[custom HTTPS server jar URL]' \
+            '--start[start after creation]' \
+            '--base-dir[base directory]:directory:_files -/' \
+            '--persistent[persist server directory]' \
+            '--java[Java reference]:java ref:_craft_runner_java_refs' \
+            '--xms[minimum heap]' \
+            '--xmx[maximum heap]' \
+            '--host[bind host]' \
+            '--port[server port]' \
+            '--rcon[enable RCON]' \
+            '--rcon-port[RCON port]' \
+            '--rcon-password[RCON password]' \
+            '--no-eula[write eula=false]'
+          return
+          ;;
         info|start|stop|restart|destroy|events|wait-ready|command)
           if (( CURRENT == 4 )); then
             _craft_runner_env_ids

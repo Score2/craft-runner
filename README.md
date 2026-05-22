@@ -45,20 +45,25 @@ craftr --json env list
 ```sh
 craft-runner java list
 craft-runner java validate 1.21.4 --java sdk:21.0.10-oracle
-craft-runner env list
-craft-runner env info test-env
-craft-runner env logs test-env --tail 120
-craft-runner env files test-env
+craft-runner server create --id test-paper --loader paper --minecraft-version 1.21.4 --start
+craft-runner server create --id local-custom --path ./server.jar --minecraft-version 1.20.4
+craft-runner server list
+craft-runner server info test-env
+craft-runner server logs test-env --tail 120
+craft-runner server files test-env
 craft-runner core list
 craft-runner core info paper-1.21.4-123
 craft-runner core verify paper-1.21.4-123
 craft-runner core remove paper-1.21.4-123
 ```
 
+`env` remains available as a backward-compatible alias for `server`.
+
 The shorter alias `craftr` is also installed:
 
 ```sh
 craftr env list
+craftr server list
 craftr core list
 ```
 
