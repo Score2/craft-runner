@@ -165,10 +165,12 @@ async function installCompletion(shell: string, args: string[]): Promise<unknown
   const dir = explicitDir ?? await findZshCompletionDir();
   await fs.mkdir(dir, { recursive: true });
   const target = path.join(dir, "_craft-runner");
+  const aliasTarget = path.join(dir, "_craftr");
   await fs.writeFile(target, zshCompletion(), "utf8");
+  await fs.writeFile(aliasTarget, zshCompletion(), "utf8");
   return {
     shell: "zsh",
-    installed: target,
+    installed: [target, aliasTarget],
     note: "Open a new zsh session or run `autoload -Uz compinit && compinit` if completion was already initialized."
   };
 }
@@ -210,23 +212,23 @@ function numberAfter(args: string[], flag: string): number | undefined {
 }
 
 function zshCompletion(): string {
-  return `#compdef craft-runner
+  return `#compdef craft-runner craftr
 
 _craft_runner_env_ids() {
   local -a ids
-  ids=("\${(@f)$(craft-runner env list --ids 2>/dev/null)}")
+  ids=("\${(@f)$($words[1] env list --ids 2>/dev/null)}")
   _describe 'environment id' ids
 }
 
 _craft_runner_core_ids() {
   local -a ids
-  ids=("\${(@f)$(craft-runner core list --ids 2>/dev/null)}")
+  ids=("\${(@f)$($words[1] core list --ids 2>/dev/null)}")
   _describe 'core id' ids
 }
 
 _craft_runner_java_refs() {
   local -a refs
-  refs=("\${(@f)$(craft-runner java list --refs 2>/dev/null)}")
+  refs=("\${(@f)$($words[1] java list --refs 2>/dev/null)}")
   _describe 'java ref' refs
 }
 

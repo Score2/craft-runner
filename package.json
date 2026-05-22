@@ -6,7 +6,8 @@
   "license": "MIT",
   "bin": {
     "craft-runner-mcp": "./dist/bin/mcp.js",
-    "craft-runner": "./dist/bin/cli.js"
+    "craft-runner": "./dist/bin/cli.js",
+    "craftr": "./dist/bin/cli.js"
   },
   "files": [
     "dist/bin",

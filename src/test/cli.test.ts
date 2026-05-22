@@ -19,9 +19,9 @@ test("CLI help prints real newlines", async () => {
 
 test("CLI prints zsh completion script", async () => {
   const result = await execFileAsync("node", ["dist/bin/cli.js", "completion", "zsh"], { cwd: process.cwd() });
-  assert.match(result.stdout, /^#compdef craft-runner\n/);
+  assert.match(result.stdout, /^#compdef craft-runner craftr\n/);
   assert.match(result.stdout, /_craft_runner_env_ids/);
-  assert.match(result.stdout, /craft-runner env list --ids/);
+  assert.match(result.stdout, /\$words\[1\] env list --ids/);
   assert.match(result.stdout, /'remove:remove a cached core'/);
   assert.match(result.stdout, /'logs:read environment logs'/);
 });
@@ -38,6 +38,9 @@ test("CLI installs zsh completion to an explicit directory", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "craft-runner-completion-"));
   const result = await execFileAsync("node", ["dist/bin/cli.js", "completion", "install", "zsh", "--dir", dir], { cwd: process.cwd() });
   const target = path.join(dir, "_craft-runner");
+  const aliasTarget = path.join(dir, "_craftr");
   assert.match(result.stdout, new RegExp(JSON.stringify(target).replace(/[.*+?^${}()|[\]\\]/g, "\\$&").slice(1, -1)));
-  assert.match(await fs.readFile(target, "utf8"), /^#compdef craft-runner\n/);
+  assert.match(result.stdout, new RegExp(JSON.stringify(aliasTarget).replace(/[.*+?^${}()|[\]\\]/g, "\\$&").slice(1, -1)));
+  assert.match(await fs.readFile(target, "utf8"), /^#compdef craft-runner craftr\n/);
+  assert.match(await fs.readFile(aliasTarget, "utf8"), /^#compdef craft-runner craftr\n/);
 });

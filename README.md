@@ -48,6 +48,13 @@ craft-runner core verify paper-1.21.4-123
 craft-runner core remove paper-1.21.4-123
 ```
 
+The shorter alias `craftr` is also installed:
+
+```sh
+craftr env list
+craftr core list
+```
+
 ## Shell Completion
 
 Generate zsh completion:
