@@ -9,7 +9,11 @@ const [, , domain, action, ...rest] = process.argv;
 try {
   const result = await run(domain, action, rest);
   if (result !== undefined) {
-    console.log(JSON.stringify(result, null, 2));
+    if (typeof result === "string") {
+      console.log(result);
+    } else {
+      console.log(JSON.stringify(result, null, 2));
+    }
   }
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));
@@ -17,6 +21,7 @@ try {
 }
 
 async function run(domain: string | undefined, action: string | undefined, args: string[]): Promise<unknown> {
+  if (!domain || domain === "--help" || domain === "-h" || domain === "help") return usage();
   if (domain === "java" && action === "list") return listJavaInstallations();
   if (domain === "java" && action === "info") return getJavaInfo(args[0] ?? "system");
   if (domain === "env" && action === "list") return manager.list();
