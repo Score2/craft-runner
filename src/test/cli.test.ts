@@ -10,7 +10,8 @@ const execFileAsync = promisify(execFile);
 
 test("CLI help prints real newlines", async () => {
   const result = await execFileAsync("node", ["dist/bin/cli.js", "--help"], { cwd: process.cwd() });
-  assert.match(result.stdout, /^Usage:\n  craft-runner java list\n/);
+  assert.match(result.stdout, /^Usage:\n  craft-runner \[--json\] <command>\n/);
+  assert.match(result.stdout, /craft-runner java list/);
   assert.match(result.stdout, /craft-runner core info <id>/);
   assert.match(result.stdout, /craft-runner core remove <id>/);
   assert.match(result.stdout, /craft-runner env logs <id>/);
@@ -31,7 +32,15 @@ test("CLI exposes read-only core and java utility commands", async () => {
   assert.match(providers.stdout, /papermc-fill/);
 
   const validate = await execFileAsync("node", ["dist/bin/cli.js", "java", "validate", "1.16.5"], { cwd: process.cwd() });
-  assert.match(validate.stdout, /"required": 8/);
+  assert.match(validate.stdout, /Java is compatible/);
+  assert.match(validate.stdout, /Minecraft requires\s+Java 8\+/);
+});
+
+test("CLI keeps JSON output behind --json", async () => {
+  const result = await execFileAsync("node", ["dist/bin/cli.js", "--json", "java", "validate", "1.16.5"], { cwd: process.cwd() });
+  const parsed = JSON.parse(result.stdout);
+  assert.equal(parsed.required, 8);
+  assert.equal(parsed.ok, true);
 });
 
 test("CLI installs zsh completion to an explicit directory", async () => {

@@ -8,15 +8,18 @@ import { getJavaInfo, listJavaInstallations, validateJavaForMinecraft } from "..
 import { CORE_PROVIDERS, resolveCore, searchCores } from "../core/providers.js";
 
 const manager = new EnvironmentManager();
-const [, , domain, action, ...rest] = process.argv;
+const rawArgs = process.argv.slice(2);
+const jsonOutput = rawArgs.includes("--json");
+const cliArgs = rawArgs.filter((arg) => arg !== "--json");
+const [domain, action, ...rest] = cliArgs;
 
 try {
   const result = await run(domain, action, rest);
   if (result !== undefined) {
-    if (typeof result === "string") {
-      console.log(result);
-    } else {
+    if (jsonOutput && typeof result !== "string") {
       console.log(JSON.stringify(result, null, 2));
+    } else {
+      console.log(formatResult(domain, action, result));
     }
   }
 } catch (error) {
@@ -125,6 +128,7 @@ function required(value: string | undefined, name: string): string {
 function usage(): string {
   return [
     "Usage:",
+    "  craft-runner [--json] <command>",
     "  craft-runner java list",
     "  craft-runner java info [ref]",
     "  craft-runner java validate <minecraft-version> [--java <ref>]",
@@ -209,6 +213,228 @@ function valueAfter(args: string[], flag: string): string | undefined {
 function numberAfter(args: string[], flag: string): number | undefined {
   const value = valueAfter(args, flag);
   return value === undefined ? undefined : Number(value);
+}
+
+function formatResult(domain: string | undefined, action: string | undefined, result: unknown): string {
+  if (typeof result === "string") return result;
+  if (result === undefined || result === null) return "";
+
+  if (domain === "completion" && action === "install" && isRecord(result)) {
+    const installed = Array.isArray(result.installed) ? result.installed : [result.installed];
+    return [
+      `Installed ${result.shell ?? "shell"} completion:`,
+      ...installed.filter(Boolean).map((file) => `  ${file}`),
+      "",
+      String(result.note ?? "")
+    ].join("\n").trimEnd();
+  }
+
+  if (domain === "java" && action === "list" && Array.isArray(result)) {
+    return result.length === 0 ? "No Java installations found." : table(
+      ["REF", "VER", "SOURCE", "COMMAND"],
+      result.map((java) => [
+        stringValue(java.ref),
+        stringValue(java.version ?? "?"),
+        stringValue(java.source),
+        stringValue(java.command)
+      ])
+    );
+  }
+
+  if (domain === "java" && action === "info" && isRecord(result)) {
+    return details("Java", [
+      ["Ref", result.ref],
+      ["Command", result.command],
+      ["Version", result.version_string ?? result.version],
+      ["Source", result.source],
+      ["Valid", result.valid ? "yes" : "no"],
+      ["Error", result.error]
+    ]);
+  }
+
+  if (domain === "java" && action === "validate" && isRecord(result)) {
+    const java = isRecord(result.java) ? result.java : {};
+    return [
+      result.ok ? "Java is compatible." : "Java is not compatible.",
+      details(undefined, [
+        ["Minecraft requires", `Java ${result.required}+`],
+        ["Selected Java", java.version ? `Java ${java.version}` : java.command],
+        ["Command", java.command],
+        ["Message", result.message]
+      ])
+    ].join("\n");
+  }
+
+  if (domain === "core" && action === "list" && Array.isArray(result)) {
+    return result.length === 0 ? "No cached cores found." : table(
+      ["ID", "LOADER", "MC", "BUILD", "SIZE"],
+      result.map((core) => [
+        stringValue(core.id),
+        stringValue(core.loader),
+        stringValue(core.minecraft_version),
+        stringValue(core.build ?? "-"),
+        formatBytes(Number(core.size ?? 0))
+      ])
+    );
+  }
+
+  if (domain === "core" && (action === "info" || action === "get" || action === "download" || action === "import") && isRecord(result)) {
+    return formatCore(result);
+  }
+
+  if (domain === "core" && action === "providers" && Array.isArray(result)) {
+    return table(
+      ["ID", "LOADERS", "STATUS", "NOTES"],
+      result.map((provider) => [
+        stringValue(provider.id),
+        Array.isArray(provider.loaders) ? provider.loaders.join(",") : "",
+        stringValue(provider.status),
+        stringValue(provider.notes)
+      ])
+    );
+  }
+
+  if (domain === "core" && action === "verify" && isRecord(result)) {
+    return result.ok
+      ? `Core verified: ${stringValue(isRecord(result.core) ? result.core.id : "")}`
+      : `Core verification failed${isRecord(result.core) ? `: ${result.core.id}` : ""}`;
+  }
+
+  if (domain === "core" && (action === "remove" || action === "delete")) {
+    return result ? "Core removed." : "Core not found.";
+  }
+
+  if (domain === "env" && action === "list" && Array.isArray(result)) {
+    return result.length === 0 ? "No environments found." : table(
+      ["ID", "STATUS", "LOADER", "MC", "PORT", "PID"],
+      result.map((env) => [
+        stringValue(env.id),
+        stringValue(env.status),
+        stringValue(env.loader),
+        stringValue(env.minecraft_version),
+        stringValue(env.port),
+        stringValue(env.pid ?? "-")
+      ])
+    );
+  }
+
+  if (domain === "env" && ["info", "get", "start", "stop", "restart"].includes(action ?? "") && isRecord(result)) {
+    return formatEnvironment(result);
+  }
+
+  if (domain === "env" && action === "destroy" && isRecord(result)) {
+    return `Environment destroyed: ${result.id}\nDeleted files: ${result.deleted_files ? "yes" : "no"}`;
+  }
+
+  if (domain === "env" && action === "logs" && isRecord(result)) {
+    const lines = Array.isArray(result.lines) ? result.lines : undefined;
+    return [
+      `Log: ${result.file}`,
+      lines ? lines.join("\n") : stringValue(result.text)
+    ].join("\n");
+  }
+
+  if (domain === "env" && action === "files" && Array.isArray(result)) {
+    return result.length === 0 ? "No files found." : result.join("\n");
+  }
+
+  if (domain === "env" && ["put", "add-plugin"].includes(action ?? "") && isRecord(result)) {
+    return `Wrote ${result.bytes} bytes to ${result.target}`;
+  }
+
+  if (domain === "env" && action === "remove-file" && isRecord(result)) {
+    return `Removed ${result.removed}`;
+  }
+
+  if (domain === "env" && action === "events" && Array.isArray(result)) {
+    return result.length === 0 ? "No events found." : table(
+      ["AT", "TYPE", "MESSAGE"],
+      result.map((event) => [stringValue(event.at), stringValue(event.type), stringValue(event.message)])
+    );
+  }
+
+  if (domain === "env" && action === "wait-ready" && isRecord(result)) {
+    return result.ready
+      ? `Environment is ready.${result.matched ? `\nMatched: ${result.matched}` : ""}`
+      : "Environment was not ready before timeout.";
+  }
+
+  if (domain === "env" && action === "command" && isRecord(result)) {
+    return stringValue(result.response);
+  }
+
+  if (Array.isArray(result)) {
+    if (result.length === 0) return "No results.";
+    if (result.every(isRecord)) return objectTable(result);
+  }
+  if (isRecord(result)) return details(undefined, Object.entries(result));
+  return String(result);
+}
+
+function formatCore(core: Record<string, unknown>): string {
+  return details("Core", [
+    ["ID", core.id],
+    ["Loader", core.loader],
+    ["Minecraft", core.minecraft_version],
+    ["Build", core.build],
+    ["Provider", core.provider],
+    ["Kind", core.kind],
+    ["Size", typeof core.size === "number" ? formatBytes(core.size) : core.size],
+    ["SHA256", core.sha256],
+    ["File", core.file_path],
+    ["Source", core.source]
+  ]);
+}
+
+function formatEnvironment(env: Record<string, unknown>): string {
+  return details("Environment", [
+    ["ID", env.id],
+    ["Status", env.status],
+    ["Loader", env.loader],
+    ["Minecraft", env.minecraft_version],
+    ["Core", env.core_id],
+    ["Address", `${env.host ?? "127.0.0.1"}:${env.port ?? "?"}`],
+    ["RCON", env.rcon_port ? `${env.host ?? "127.0.0.1"}:${env.rcon_port}` : "disabled"],
+    ["PID", env.pid],
+    ["Java", env.java_command ?? env.java_ref],
+    ["Server dir", env.server_dir]
+  ]);
+}
+
+function details(title: string | undefined, rows: Array<[string, unknown]>): string {
+  const filtered = rows.filter(([, value]) => value !== undefined && value !== "");
+  const width = filtered.reduce((max, [key]) => Math.max(max, key.length), 0);
+  const body = filtered.map(([key, value]) => `${key.padEnd(width)}  ${stringValue(value)}`).join("\n");
+  return title ? `${title}\n${body}` : body;
+}
+
+function table(headers: string[], rows: string[][]): string {
+  const widths = headers.map((header, index) => Math.max(header.length, ...rows.map((row) => row[index]?.length ?? 0)));
+  const render = (row: string[]) => row.map((cell, index) => (cell ?? "").padEnd(widths[index])).join("  ").trimEnd();
+  return [render(headers), render(widths.map((width) => "-".repeat(width))), ...rows.map(render)].join("\n");
+}
+
+function objectTable(rows: Record<string, unknown>[]): string {
+  const headers = [...new Set(rows.flatMap((row) => Object.keys(row)))].slice(0, 6);
+  return table(headers.map((header) => header.toUpperCase()), rows.map((row) => headers.map((header) => stringValue(row[header]))));
+}
+
+function stringValue(value: unknown): string {
+  if (value === undefined || value === null) return "";
+  if (Array.isArray(value)) return value.join(",");
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes)) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+}
+
+function isRecord(value: unknown): value is Record<string, any> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function zshCompletion(): string {

@@ -35,6 +35,13 @@ Example MCP config:
 
 ## CLI
 
+CLI output is human-readable by default. Add `--json` when a script needs the
+raw structured response:
+
+```sh
+craftr --json env list
+```
+
 ```sh
 craft-runner java list
 craft-runner java validate 1.21.4 --java sdk:21.0.10-oracle
