@@ -4,6 +4,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { CoreCache } from "../core/cache.js";
 import { resolveCore } from "../core/providers.js";
+import { CoreInstallationManager } from "../core/installation.js";
 import { allocatePort, releasePort } from "./ports.js";
 import { loadConfig } from "../lib/config.js";
 import {
@@ -22,11 +23,13 @@ export class EnvironmentManager {
   readonly config: CraftRunnerConfig;
   readonly store: MetadataStore;
   readonly coreCache: CoreCache;
+  readonly coreInstallation: CoreInstallationManager;
 
   constructor(config = loadConfig()) {
     this.config = config;
     this.store = new MetadataStore(config);
     this.coreCache = new CoreCache(config);
+    this.coreInstallation = new CoreInstallationManager(this.coreCache);
   }
 
   async init(): Promise<void> {
@@ -127,7 +130,8 @@ export class EnvironmentManager {
     if (!java.valid) throw new Error(java.error ?? "selected Java is not valid");
 
     await ensureDir(env.server_dir);
-    const command = await buildLaunchCommand(env, core.file_path, core.kind, core.launch?.install_args ?? [], this.installLogPath(env));
+    const materialized = await this.coreInstallation.materialize(core, env);
+    const command = await buildLaunchCommand(env, materialized.launch);
     const stdoutPath = this.stdoutLogPath(env);
     await ensureDir(path.dirname(stdoutPath));
     const outFd = fsSync.openSync(stdoutPath, "a");
@@ -150,6 +154,11 @@ export class EnvironmentManager {
     env.status = "running";
     env.updated_at = new Date().toISOString();
     env.java_command = java.command;
+    addEvent(env, "core_materialized", "Core installation materialized", {
+      core_id: core.id,
+      install_dir: materialized.install_dir,
+      links: materialized.links
+    });
     addEvent(env, "started", "Environment started", { pid: child.pid, command: command.command, args: command.args });
     await this.store.saveEnvironment(env);
     return env;
@@ -330,10 +339,6 @@ export class EnvironmentManager {
     return path.join(env.base_dir, "envs", env.id, "logs", "craft-runner-stdout.log");
   }
 
-  private installLogPath(env: EnvironmentMetadata): string {
-    return path.join(env.base_dir, "envs", env.id, "logs", "craft-runner-install.log");
-  }
-
   private async resolveLogFile(env: EnvironmentMetadata, file?: string): Promise<string> {
     if (file) {
       return resolveInside(env.server_dir, file);
@@ -357,42 +362,13 @@ export class EnvironmentManager {
 
 async function buildLaunchCommand(
   env: EnvironmentMetadata,
-  corePath: string,
-  kind: "jar" | "installer",
-  installArgs: string[],
-  installLogPath: string
+  launch: { command: "java" | "sh"; args: string[] }
 ): Promise<{ command: string; args: string[] }> {
   const java = await resolveJavaCommand(env.java_ref ?? "system");
-  if (kind === "installer") {
-    const marker = path.join(env.server_dir, `.craft-runner-installed-${env.core_id}`);
-    if (!(await pathExists(marker))) {
-      await execInstaller(java, corePath, installArgs, env.server_dir, installLogPath);
-      await fs.writeFile(marker, new Date().toISOString());
-    }
-    const runSh = path.join(env.server_dir, "run.sh");
-    if (await pathExists(runSh)) {
-      return { command: "sh", args: [runSh, "nogui"] };
-    }
-    const jar = await findFirstJar(env.server_dir, ["forge-", "neoforge-"]);
-    if (jar) {
-      return { command: java, args: memoryArgs(env).concat(["-jar", jar, "nogui"]) };
-    }
-    throw new Error("installer core did not produce a recognizable launch file");
+  if (launch.command === "sh") {
+    return { command: "sh", args: launch.args };
   }
-  return { command: java, args: memoryArgs(env).concat(env.java_args, ["-jar", corePath, "nogui"]) };
-}
-
-async function execInstaller(java: string, installer: string, args: string[], cwd: string, logPath: string): Promise<void> {
-  await ensureDir(path.dirname(logPath));
-  const outFd = fsSync.openSync(logPath, "a");
-  const errFd = fsSync.openSync(logPath, "a");
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn(java, ["-jar", installer, ...args], { cwd, stdio: ["ignore", outFd, errFd] });
-    child.on("error", reject);
-    child.on("exit", (code) => code === 0 ? resolve() : reject(new Error(`installer exited with code ${code}`)));
-  });
-  fsSync.closeSync(outFd);
-  fsSync.closeSync(errFd);
+  return { command: java, args: memoryArgs(env).concat(env.java_args, launch.args) };
 }
 
 function memoryArgs(env: EnvironmentMetadata): string[] {
@@ -437,18 +413,4 @@ async function readLines(file: string): Promise<string[]> {
     if (code === "ENOENT") return [];
     throw error;
   }
-}
-
-async function findFirstJar(dir: string, prefixes: string[]): Promise<string | undefined> {
-  for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
-    const full = path.join(dir, entry.name);
-    if (entry.isFile() && entry.name.endsWith(".jar") && prefixes.some((prefix) => entry.name.startsWith(prefix))) {
-      return full;
-    }
-    if (entry.isDirectory() && entry.name !== "libraries") {
-      const found = await findFirstJar(full, prefixes);
-      if (found) return found;
-    }
-  }
-  return undefined;
 }

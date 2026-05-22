@@ -55,3 +55,13 @@ craft-runner core list
 - `list_java_installations`
 
 Remote and Docker runners are intentionally not implemented yet.
+
+## Core Installation Cache
+
+Downloaded cores are stored once under the user cache directory. Runtime assets that
+are bound to a specific core, such as `libraries/`, Paper/Purpur cache output, and
+Forge/NeoForge installer output, are prepared centrally under that core's
+installation directory.
+
+Each test environment keeps its own `plugins/`, config, worlds, and logs, while
+shareable core-bound directories are linked from the central core installation.

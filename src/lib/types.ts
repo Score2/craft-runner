@@ -39,6 +39,22 @@ export type CoreMetadata = {
   downloaded_at: string;
 };
 
+export type MaterializedCore = {
+  core_id: string;
+  install_dir: string;
+  launch: {
+    command: "java" | "sh";
+    args: string[];
+    cwd: string;
+  };
+  links: Array<{
+    source: string;
+    target: string;
+    strategy: "symlink" | "hardlink" | "copy";
+  }>;
+  prepared_at: string;
+};
+
 export type JavaRef = string | undefined;
 
 export type JavaInfo = {

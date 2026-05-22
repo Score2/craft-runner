@@ -22,8 +22,8 @@ export const CORE_PROVIDERS: CoreProviderInfo[] = [
   { id: "papermc-fill", loaders: ["paper", "folia"], status: "supported", notes: "PaperMC Fill Downloads Service." },
   { id: "purpur-api", loaders: ["purpur"], status: "supported", notes: "PurpurMC v2 Downloads API." },
   { id: "fabric-meta", loaders: ["fabric"], status: "supported", notes: "Fabric Meta server launcher jar." },
-  { id: "minecraftforge-maven", loaders: ["forge"], status: "partial", notes: "Downloads installer; environment install happens on first start." },
-  { id: "neoforge-maven", loaders: ["neoforge"], status: "partial", notes: "Downloads installer; environment install happens on first start." },
+  { id: "minecraftforge-maven", loaders: ["forge"], status: "partial", notes: "Downloads installer; core installation is prepared centrally before start." },
+  { id: "neoforge-maven", loaders: ["neoforge"], status: "partial", notes: "Downloads installer; core installation is prepared centrally before start." },
   { id: "spigot-buildtools", loaders: ["spigot", "craftbukkit"], status: "partial", notes: "Runs BuildTools in isolated cache workdir." }
 ];
 

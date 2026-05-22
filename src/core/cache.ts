@@ -31,6 +31,26 @@ export class CoreCache {
     return path.join(this.coresDir, sanitizeIdPart(loader), sanitizeIdPart(minecraftVersion), `${id}.json`);
   }
 
+  installDir(core: Pick<CoreMetadata, "loader" | "minecraft_version" | "id">): string {
+    return path.join(
+      this.coresDir,
+      sanitizeIdPart(core.loader),
+      sanitizeIdPart(core.minecraft_version),
+      sanitizeIdPart(core.id),
+      "install"
+    );
+  }
+
+  lockDir(core: Pick<CoreMetadata, "loader" | "minecraft_version" | "id">): string {
+    return path.join(
+      this.coresDir,
+      sanitizeIdPart(core.loader),
+      sanitizeIdPart(core.minecraft_version),
+      sanitizeIdPart(core.id),
+      "locks"
+    );
+  }
+
   async save(metadata: CoreMetadata): Promise<CoreMetadata> {
     await writeJson(this.metadataPath(metadata.loader, metadata.minecraft_version, metadata.id), metadata);
     return metadata;
@@ -59,6 +79,7 @@ export class CoreCache {
     if (!core) return false;
     await fs.rm(core.file_path, { force: true });
     await fs.rm(this.metadataPath(core.loader, core.minecraft_version, core.id), { force: true });
+    await fs.rm(path.dirname(this.installDir(core)), { recursive: true, force: true });
     return true;
   }
 
@@ -169,7 +190,10 @@ async function collectJson(dir: string, result: CoreMetadata[]): Promise<void> {
       await collectJson(full, result);
     } else if (entry.isFile() && entry.name.endsWith(".json")) {
       try {
-        result.push(JSON.parse(await fs.readFile(full, "utf8")) as CoreMetadata);
+        const parsed = JSON.parse(await fs.readFile(full, "utf8")) as Partial<CoreMetadata>;
+        if (parsed.id && parsed.file_path && parsed.sha256 && parsed.loader && parsed.minecraft_version) {
+          result.push(parsed as CoreMetadata);
+        }
       } catch {
         // Ignore corrupt cache metadata.
       }
