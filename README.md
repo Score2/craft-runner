@@ -41,6 +41,34 @@ craft-runner env list
 craft-runner core list
 ```
 
+## Shell Completion
+
+Generate zsh completion:
+
+```sh
+craft-runner completion zsh
+```
+
+Temporary use in the current shell:
+
+```sh
+source <(craft-runner completion zsh)
+```
+
+Persistent zsh install usually means writing the generated script to a directory
+already present in `fpath`, for example Homebrew's site-functions directory:
+
+```sh
+craft-runner completion install zsh
+autoload -Uz compinit && compinit
+```
+
+To choose a specific completion directory:
+
+```sh
+craft-runner completion install zsh --dir ~/.zsh/completions
+```
+
 ## Main MCP Tools
 
 - `create_environment`

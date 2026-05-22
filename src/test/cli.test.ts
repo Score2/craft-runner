@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
@@ -9,4 +12,19 @@ test("CLI help prints real newlines", async () => {
   const result = await execFileAsync("node", ["dist/bin/cli.js", "--help"], { cwd: process.cwd() });
   assert.match(result.stdout, /^Usage:\n  craft-runner java list\n/);
   assert.equal(result.stdout.includes("\\n"), false);
+});
+
+test("CLI prints zsh completion script", async () => {
+  const result = await execFileAsync("node", ["dist/bin/cli.js", "completion", "zsh"], { cwd: process.cwd() });
+  assert.match(result.stdout, /^#compdef craft-runner\n/);
+  assert.match(result.stdout, /_craft_runner_env_ids/);
+  assert.match(result.stdout, /craft-runner env list --ids/);
+});
+
+test("CLI installs zsh completion to an explicit directory", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "craft-runner-completion-"));
+  const result = await execFileAsync("node", ["dist/bin/cli.js", "completion", "install", "zsh", "--dir", dir], { cwd: process.cwd() });
+  const target = path.join(dir, "_craft-runner");
+  assert.match(result.stdout, new RegExp(JSON.stringify(target).replace(/[.*+?^${}()|[\]\\]/g, "\\$&").slice(1, -1)));
+  assert.match(await fs.readFile(target, "utf8"), /^#compdef craft-runner\n/);
 });
