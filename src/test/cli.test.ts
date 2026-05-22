@@ -11,6 +11,9 @@ const execFileAsync = promisify(execFile);
 test("CLI help prints real newlines", async () => {
   const result = await execFileAsync("node", ["dist/bin/cli.js", "--help"], { cwd: process.cwd() });
   assert.match(result.stdout, /^Usage:\n  craft-runner java list\n/);
+  assert.match(result.stdout, /craft-runner core info <id>/);
+  assert.match(result.stdout, /craft-runner core remove <id>/);
+  assert.match(result.stdout, /craft-runner env logs <id>/);
   assert.equal(result.stdout.includes("\\n"), false);
 });
 
@@ -19,6 +22,16 @@ test("CLI prints zsh completion script", async () => {
   assert.match(result.stdout, /^#compdef craft-runner\n/);
   assert.match(result.stdout, /_craft_runner_env_ids/);
   assert.match(result.stdout, /craft-runner env list --ids/);
+  assert.match(result.stdout, /'remove:remove a cached core'/);
+  assert.match(result.stdout, /'logs:read environment logs'/);
+});
+
+test("CLI exposes read-only core and java utility commands", async () => {
+  const providers = await execFileAsync("node", ["dist/bin/cli.js", "core", "providers"], { cwd: process.cwd() });
+  assert.match(providers.stdout, /papermc-fill/);
+
+  const validate = await execFileAsync("node", ["dist/bin/cli.js", "java", "validate", "1.16.5"], { cwd: process.cwd() });
+  assert.match(validate.stdout, /"required": 8/);
 });
 
 test("CLI installs zsh completion to an explicit directory", async () => {

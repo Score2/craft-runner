@@ -37,8 +37,15 @@ Example MCP config:
 
 ```sh
 craft-runner java list
+craft-runner java validate 1.21.4 --java sdk:21.0.10-oracle
 craft-runner env list
+craft-runner env info test-env
+craft-runner env logs test-env --tail 120
+craft-runner env files test-env
 craft-runner core list
+craft-runner core info paper-1.21.4-123
+craft-runner core verify paper-1.21.4-123
+craft-runner core remove paper-1.21.4-123
 ```
 
 ## Shell Completion
