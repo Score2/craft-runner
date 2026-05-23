@@ -92,8 +92,8 @@ test("CLI installs zsh completion to an explicit directory", async () => {
   const result = await execFileAsync("node", ["dist/bin/cli.js", "completion", "install", "zsh", "--dir", dir], { cwd: process.cwd() });
   const target = path.join(dir, "_craft-runner");
   const aliasTarget = path.join(dir, "_craftr");
-  assert.match(result.stdout, new RegExp(JSON.stringify(target).replace(/[.*+?^${}()|[\]\\]/g, "\\$&").slice(1, -1)));
-  assert.match(result.stdout, new RegExp(JSON.stringify(aliasTarget).replace(/[.*+?^${}()|[\]\\]/g, "\\$&").slice(1, -1)));
+  assert.equal(result.stdout.includes(target), true);
+  assert.equal(result.stdout.includes(aliasTarget), true);
   assert.match(await fs.readFile(target, "utf8"), /^#compdef craft-runner craftr\n/);
   assert.match(await fs.readFile(aliasTarget, "utf8"), /^#compdef craft-runner craftr\n/);
 });
