@@ -512,11 +512,14 @@ export class ServerManager {
 
 async function buildLaunchCommand(
   server: ServerMetadata,
-  launch: { command: "java" | "sh"; args: string[] }
+  launch: { command: "java" | "sh" | "cmd"; args: string[] }
 ): Promise<{ command: string; args: string[] }> {
   const java = await resolveJavaCommand(server.java_ref ?? "system");
   if (launch.command === "sh") {
     return { command: "sh", args: launch.args };
+  }
+  if (launch.command === "cmd") {
+    return { command: process.env.ComSpec ?? "cmd.exe", args: launch.args };
   }
   return { command: java, args: memoryArgs(server).concat(server.java_args, launch.args) };
 }

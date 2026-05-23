@@ -21,10 +21,16 @@ function projectRoot(): string {
 
 async function runGradle(agentDir: string): Promise<void> {
   await new Promise<void>((resolve, reject) => {
-    const child = spawn("gradle", ["-p", agentDir, "jar"], {
-      cwd: path.dirname(agentDir),
-      stdio: ["ignore", "pipe", "pipe"]
-    });
+    const args = ["-p", agentDir, "jar"];
+    const child = process.platform === "win32"
+      ? spawn(process.env.ComSpec ?? "cmd.exe", ["/d", "/s", "/c", "gradle.cmd", ...args], {
+        cwd: path.dirname(agentDir),
+        stdio: ["ignore", "pipe", "pipe"]
+      })
+      : spawn("gradle", args, {
+        cwd: path.dirname(agentDir),
+        stdio: ["ignore", "pipe", "pipe"]
+      });
     let output = "";
     const collect = (chunk: Buffer): void => {
       output = `${output}${chunk.toString("utf8")}`.slice(-20000);

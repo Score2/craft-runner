@@ -43,7 +43,7 @@ export type MaterializedCore = {
   core_id: string;
   install_dir: string;
   launch: {
-    command: "java" | "sh";
+    command: "java" | "sh" | "cmd";
     args: string[];
     cwd: string;
   };

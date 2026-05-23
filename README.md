@@ -33,6 +33,20 @@ Example MCP config:
 }
 ```
 
+On Windows, MCP clients that spawn commands without a shell should use the npm
+`.cmd` shim through `cmd.exe`:
+
+```json
+{
+  "mcpServers": {
+    "craft-runner": {
+      "command": "cmd.exe",
+      "args": ["/d", "/s", "/c", "craft-runner-mcp.cmd"]
+    }
+  }
+}
+```
+
 ## CLI
 
 CLI output is human-readable by default. Add `--json` when a script needs the

@@ -11,7 +11,7 @@ type PreparedCore = {
   core_id: string;
   install_dir: string;
   launch: {
-    command: "java" | "sh";
+    command: "java" | "sh" | "cmd";
     args: string[];
     cwd: string;
   };
@@ -109,8 +109,12 @@ export class CoreInstallationManager {
 
   private async resolveLaunch(core: CoreMetadata, installDir: string): Promise<PreparedCore["launch"]> {
     if (core.kind === "installer") {
+      const runBat = path.join(installDir, "run.bat");
+      if (process.platform === "win32" && await pathExists(runBat)) {
+        return { command: "cmd", args: ["/d", "/s", "/c", "run.bat", "nogui"], cwd: installDir };
+      }
       const runSh = path.join(installDir, "run.sh");
-      if (await pathExists(runSh)) {
+      if (process.platform !== "win32" && await pathExists(runSh)) {
         return { command: "sh", args: ["run.sh", "nogui"], cwd: installDir };
       }
       const jar = await findFirstJar(installDir, ["forge-", "neoforge-"]);
@@ -188,13 +192,16 @@ async function execInstaller(java: string, installer: string, args: string[], cw
   await ensureDir(path.dirname(logPath));
   const outFd = fsSync.openSync(logPath, "a");
   const errFd = fsSync.openSync(logPath, "a");
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn(java, ["-jar", installer, ...args], { cwd, stdio: ["ignore", outFd, errFd] });
-    child.on("error", reject);
-    child.on("exit", (code) => code === 0 ? resolve() : reject(new Error(`installer exited with code ${code}`)));
-  });
-  fsSync.closeSync(outFd);
-  fsSync.closeSync(errFd);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(java, ["-jar", installer, ...args], { cwd, stdio: ["ignore", outFd, errFd] });
+      child.on("error", reject);
+      child.on("exit", (code) => code === 0 ? resolve() : reject(new Error(`installer exited with code ${code}`)));
+    });
+  } finally {
+    fsSync.closeSync(outFd);
+    fsSync.closeSync(errFd);
+  }
 }
 
 async function findFirstJar(dir: string, prefixes: string[]): Promise<string | undefined> {
