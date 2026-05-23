@@ -1,4 +1,4 @@
-package io.github.score2.craftrunner.agent;
+package io.github.score2.craftrunner.agent.common;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -10,17 +10,15 @@ import java.nio.file.StandardCopyOption;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.logging.Level;
-import org.bukkit.Bukkit;
 
 final class FileMailbox implements Runnable {
-    private final CraftRunnerAgentPlugin plugin;
+    private final AgentPlatform platform;
     private final AgentConfig config;
     private final Path root;
     private final Path requests;
@@ -31,15 +29,15 @@ final class FileMailbox implements Runnable {
     private final Gson gson = new GsonBuilder().disableHtmlEscaping().create();
     private final Set<String> seen = new HashSet<>();
 
-    FileMailbox(CraftRunnerAgentPlugin plugin, AgentConfig config, Path root, ExecutorService asyncExecutor) {
-        this.plugin = plugin;
+    FileMailbox(AgentPlatform platform, AgentConfig config, Path root, ExecutorService asyncExecutor) {
+        this.platform = platform;
         this.config = config;
         this.root = root;
         this.requests = root.resolve("requests");
         this.responses = root.resolve("responses");
         this.tmp = root.resolve("tmp");
         this.asyncExecutor = asyncExecutor;
-        this.executor = new JsDebugExecutor(plugin);
+        this.executor = new JsDebugExecutor(platform);
     }
 
     void ensureDirectories() throws IOException {
@@ -54,7 +52,7 @@ final class FileMailbox implements Runnable {
         try {
             processOnce();
         } catch (Exception error) {
-            plugin.getLogger().log(Level.WARNING, "Failed to process craft-runner mailbox", error);
+            platform.logger().log(Level.WARNING, "Failed to process craft-runner mailbox", error);
         }
     }
 
@@ -105,12 +103,7 @@ final class FileMailbox implements Runnable {
             if ("async".equalsIgnoreCase(request.thread)) {
                 future = asyncExecutor.submit(() -> executor.execute(request.code));
             } else {
-                future = Bukkit.getScheduler().callSyncMethod(plugin, new Callable<>() {
-                    @Override
-                    public Object call() {
-                        return executor.execute(request.code);
-                    }
-                });
+                future = platform.callMainThread(() -> executor.execute(request.code), asyncExecutor);
             }
             Object result = future.get(timeoutMs(request), TimeUnit.MILLISECONDS);
             return DebugResponse.success(request.id, result, elapsedMs(started));
@@ -138,7 +131,7 @@ final class FileMailbox implements Runnable {
             Files.writeString(tmpFile, gson.toJson(response) + "\n", StandardCharsets.UTF_8);
             Files.move(tmpFile, responseFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
         } catch (Exception error) {
-            plugin.getLogger().log(Level.WARNING, "Failed to write craft-runner debug response", error);
+            platform.logger().log(Level.WARNING, "Failed to write craft-runner debug response", error);
         }
     }
 

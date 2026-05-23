@@ -13,6 +13,28 @@ java {
 
 dependencies {
     compileOnly("io.papermc.paper:paper-api:1.21.4-R0.1-SNAPSHOT")
+    compileOnly("net.fabricmc:fabric-loader:0.19.2")
+    compileOnly("net.minecraftforge:forge:1.21.4-54.1.16:universal") {
+        isTransitive = false
+    }
+    compileOnly("net.minecraftforge:fmlloader:1.21.4-54.1.16") {
+        isTransitive = false
+    }
+    compileOnly("net.minecraftforge:javafmllanguage:1.21.4-54.1.16") {
+        isTransitive = false
+    }
+    compileOnly("net.minecraftforge:eventbus:6.2.33") {
+        isTransitive = false
+    }
+    compileOnly("net.neoforged:neoforge:21.1.230:universal") {
+        isTransitive = false
+    }
+    compileOnly("net.neoforged.fancymodloader:loader:4.0.42") {
+        isTransitive = false
+    }
+    compileOnly("net.neoforged:bus:8.0.5") {
+        isTransitive = false
+    }
     implementation("org.graalvm.polyglot:polyglot:25.0.3")
     implementation("org.graalvm.polyglot:js:25.0.3")
     implementation("com.google.code.gson:gson:2.13.2")
@@ -24,7 +46,7 @@ tasks.withType<JavaCompile>().configureEach {
 }
 
 tasks.jar {
-    archiveBaseName.set("craft-runner-agent-bukkit")
+    archiveBaseName.set("craft-runner-agent")
     archiveClassifier.set("")
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     from({
@@ -34,7 +56,7 @@ tasks.jar {
             .map { if (it.isDirectory) it else zipTree(it) }
     })
     manifest {
-        attributes["Implementation-Title"] = "Craft Runner Bukkit Agent"
+        attributes["Implementation-Title"] = "Craft Runner Agent"
         attributes["Implementation-Version"] = project.version
     }
 }

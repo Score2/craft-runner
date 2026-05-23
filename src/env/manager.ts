@@ -324,12 +324,14 @@ export class EnvironmentManager {
     const env = await this.get(id);
     const token = env.debug_agent?.token ?? randomId("debug");
     const mailboxDir = path.join(env.server_dir, ".craft-runner-agent");
-    await ensureDir(path.join(env.server_dir, "plugins"));
     await ensureDir(path.join(mailboxDir, "requests"));
     await ensureDir(path.join(mailboxDir, "responses"));
     await ensureDir(path.join(mailboxDir, "tmp"));
-    const targetJar = path.join(env.server_dir, "plugins", "craft-runner-agent.jar");
-    await fs.copyFile(agentJarPath, targetJar);
+    const targetJars = debugAgentTargets(env);
+    for (const targetJar of targetJars) {
+      await ensureDir(path.dirname(targetJar));
+      await fs.copyFile(agentJarPath, targetJar);
+    }
     await writeJson(path.join(mailboxDir, "config.json"), {
       token,
       pollIntervalMs: 250
@@ -337,10 +339,11 @@ export class EnvironmentManager {
     env.debug_agent = {
       token,
       mailbox_dir: mailboxDir,
-      agent_jar: targetJar,
+      agent_jar: targetJars[0],
+      agent_jars: targetJars,
       installed_at: new Date().toISOString()
     };
-    addEvent(env, "debug_agent_installed", "Craft Runner debug agent installed", { mailbox_dir: mailboxDir });
+    addEvent(env, "debug_agent_installed", "Craft Runner debug agent installed", { mailbox_dir: mailboxDir, agent_jars: targetJars });
     await this.store.saveEnvironment(env);
     return env;
   }
@@ -348,14 +351,16 @@ export class EnvironmentManager {
   async debugAgentStatus(id: string): Promise<Record<string, unknown>> {
     const env = await this.get(id);
     const mailboxDir = env.debug_agent?.mailbox_dir ?? path.join(env.server_dir, ".craft-runner-agent");
-    const agentJar = env.debug_agent?.agent_jar ?? path.join(env.server_dir, "plugins", "craft-runner-agent.jar");
+    const agentJars = env.debug_agent?.agent_jars ?? (env.debug_agent?.agent_jar ? [env.debug_agent.agent_jar] : debugAgentTargets(env));
     return {
       env_id: env.id,
       configured: Boolean(env.debug_agent?.token),
       mailbox_dir: mailboxDir,
       mailbox_exists: await pathExists(mailboxDir),
-      agent_jar: agentJar,
-      agent_jar_exists: await pathExists(agentJar),
+      agent_jar: agentJars[0],
+      agent_jars: agentJars,
+      agent_jar_exists: await pathExists(agentJars[0]),
+      agent_jars_existing: await existingPaths(agentJars),
       requests_dir_exists: await pathExists(path.join(mailboxDir, "requests")),
       responses_dir_exists: await pathExists(path.join(mailboxDir, "responses")),
       installed_at: env.debug_agent?.installed_at
@@ -459,6 +464,31 @@ async function buildLaunchCommand(
 
 function memoryArgs(env: EnvironmentMetadata): string[] {
   return [`-Xms${env.memory.xms}`, `-Xmx${env.memory.xmx}`];
+}
+
+function debugAgentTargets(env: EnvironmentMetadata): string[] {
+  const modLoaders = new Set(["fabric", "forge", "neoforge"]);
+  const pluginLoaders = new Set(["bukkit", "craftbukkit", "spigot", "paper", "purpur", "folia"]);
+  if (modLoaders.has(env.loader)) {
+    return [path.join(env.server_dir, "mods", "craft-runner-agent.jar")];
+  }
+  if (pluginLoaders.has(env.loader)) {
+    return [path.join(env.server_dir, "plugins", "craft-runner-agent.jar")];
+  }
+  return [
+    path.join(env.server_dir, "plugins", "craft-runner-agent.jar"),
+    path.join(env.server_dir, "mods", "craft-runner-agent.jar")
+  ];
+}
+
+async function existingPaths(paths: string[]): Promise<string[]> {
+  const result: string[] = [];
+  for (const item of paths) {
+    if (await pathExists(item)) {
+      result.push(item);
+    }
+  }
+  return result;
 }
 
 function addEvent(env: EnvironmentMetadata, type: string, message: string, data?: Record<string, unknown>): void {

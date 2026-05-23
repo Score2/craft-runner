@@ -2,5 +2,5 @@ docs/
 dist/
 node_modules/
 *.tgz
-agent-bukkit/build/
-agent-bukkit/.gradle/
+agent/build/
+agent/.gradle/

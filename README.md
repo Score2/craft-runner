@@ -116,9 +116,11 @@ Remote and Docker runners are intentionally not implemented yet.
 
 ## JS Debug Agent
 
-For Bukkit-family servers, craft-runner can install a local debug agent plugin.
+For plugin/mod capable servers, craft-runner can install a local debug agent.
 The agent uses GraalJS and communicates through files in the server directory,
-without opening another port.
+without opening another port. The same agent jar contains entrypoints for
+Bukkit-family servers, Fabric, Forge, and NeoForge. Vanilla servers do not have
+a plugin/mod loading mechanism, so they cannot load this agent directly.
 
 ```sh
 craftr debug install-agent test-paper
@@ -126,6 +128,10 @@ craftr server restart test-paper
 craftr debug status test-paper
 craftr debug js test-paper --code "Bukkit.getOnlinePlayers().size()"
 ```
+
+The installer places the jar under `plugins/` for Bukkit-family loaders and
+under `mods/` for Fabric, Forge, and NeoForge. For `custom` loaders it writes
+both locations because the platform cannot be inferred from metadata alone.
 
 Mailbox path:
 

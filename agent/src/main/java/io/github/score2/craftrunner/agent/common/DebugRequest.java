@@ -1,4 +1,4 @@
-package io.github.score2.craftrunner.agent;
+package io.github.score2.craftrunner.agent.common;
 
 final class DebugRequest {
     String id = "";

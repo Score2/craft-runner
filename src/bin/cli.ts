@@ -6,7 +6,7 @@ import path from "node:path";
 import { EnvironmentManager } from "../env/manager.js";
 import { getJavaInfo, listJavaInstallations, validateJavaForMinecraft } from "../java/discovery.js";
 import { CORE_PROVIDERS, resolveCore, searchCores } from "../core/providers.js";
-import { getBukkitAgentJar } from "../debug/agentJar.js";
+import { getAgentJar } from "../debug/agentJar.js";
 
 const manager = new EnvironmentManager();
 const rawArgs = process.argv.slice(2);
@@ -34,7 +34,7 @@ async function run(domain: string | undefined, action: string | undefined, args:
   if (commandDomain === "completion" && action === "zsh") return zshCompletion();
   if (commandDomain === "completion" && action === "install") return installCompletion(required(args[0], "shell"), args.slice(1));
   if (commandDomain === "debug" && action === "install-agent") {
-    return manager.installDebugAgent(required(args[0], "server id"), await getBukkitAgentJar({ rebuild: args.includes("--rebuild") }));
+    return manager.installDebugAgent(required(args[0], "server id"), await getAgentJar({ rebuild: args.includes("--rebuild") }));
   }
   if (commandDomain === "debug" && action === "status") return manager.debugAgentStatus(required(args[0], "server id"));
   if (commandDomain === "debug" && action === "js") {
@@ -431,7 +431,7 @@ function formatResult(domain: string | undefined, action: string | undefined, re
       "Debug agent installed.",
       formatEnvironment(result),
       "",
-      "Restart or start the server so Bukkit loads plugins/craft-runner-agent.jar."
+      "Restart or start the server so the platform loads craft-runner-agent.jar."
     ].join("\n");
   }
 
@@ -441,6 +441,7 @@ function formatResult(domain: string | undefined, action: string | undefined, re
       ["Configured", result.configured ? "yes" : "no"],
       ["Agent jar", result.agent_jar],
       ["Agent jar exists", result.agent_jar_exists ? "yes" : "no"],
+      ["All agent jars", Array.isArray(result.agent_jars) ? result.agent_jars.join(", ") : undefined],
       ["Mailbox", result.mailbox_dir],
       ["Mailbox exists", result.mailbox_exists ? "yes" : "no"],
       ["Requests dir", result.requests_dir_exists ? "yes" : "no"],
@@ -569,7 +570,7 @@ _craft_runner() {
     'core:manage cached Minecraft server cores'
     'server:manage local Minecraft test servers'
     'env:alias for server'
-    'debug:execute JS through the Bukkit file mailbox agent'
+    'debug:execute JS through the file mailbox agent'
     'completion:generate shell completion scripts'
     'help:show command help'
   )
@@ -607,7 +608,7 @@ _craft_runner() {
     'command:send a server command through RCON'
   )
   debug_commands=(
-    'install-agent:install Bukkit JS debug agent'
+    'install-agent:install JS debug agent'
     'status:show debug agent status'
     'js:execute JavaScript through the debug agent'
   )

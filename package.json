@@ -10,10 +10,10 @@
     "craftr": "./dist/bin/cli.js"
   },
   "files": [
-    "agent-bukkit/build.gradle.kts",
-    "agent-bukkit/build/libs/*.jar",
-    "agent-bukkit/settings.gradle.kts",
-    "agent-bukkit/src",
+    "agent/build.gradle.kts",
+    "agent/build/libs/*.jar",
+    "agent/settings.gradle.kts",
+    "agent/src",
     "dist/bin",
     "dist/core",
     "dist/debug",
@@ -28,7 +28,7 @@
   "scripts": {
     "build": "npm run build:ts && npm run build:agent",
     "build:ts": "tsc -p tsconfig.json && node -e \"const fs=require('fs'); for (const f of ['dist/bin/mcp.js','dist/bin/cli.js']) fs.chmodSync(f, 0o755)\"",
-    "build:agent": "gradle -p agent-bukkit jar",
+    "build:agent": "gradle -p agent jar",
     "prepare": "npm run build",
     "test": "npm run build && node --test dist/test/**/*.test.js",
     "lint": "tsc -p tsconfig.json --noEmit",

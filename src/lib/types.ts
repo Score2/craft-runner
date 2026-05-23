@@ -95,6 +95,7 @@ export type EnvironmentMetadata = {
     token: string;
     mailbox_dir: string;
     agent_jar: string;
+    agent_jars?: string[];
     installed_at: string;
   };
   status: EnvironmentStatus;

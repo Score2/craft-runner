@@ -3,7 +3,7 @@ import { z } from "zod";
 import { EnvironmentManager } from "../env/manager.js";
 import { CORE_PROVIDERS, resolveCore, searchCores } from "../core/providers.js";
 import { getJavaInfo, listJavaInstallations, validateJavaForMinecraft } from "../java/discovery.js";
-import { getBukkitAgentJar } from "../debug/agentJar.js";
+import { getAgentJar } from "../debug/agentJar.js";
 import fs from "node:fs/promises";
 
 const CoreRefSchema = z.object({
@@ -196,16 +196,16 @@ export function createMcpServer(manager = new EnvironmentManager()): McpServer {
     minecraft_version: z.string()
   }, (args) => validateJavaForMinecraft(args.java_ref, args.minecraft_version));
 
-  tool("debug_install_agent", "Install the Bukkit-family JS debug agent into a local test server.", {
+  tool("debug_install_agent", "Install the multi-platform JS debug agent into a local test server.", {
     env_id: z.string(),
     rebuild: z.boolean().optional()
-  }, async (args) => manager.installDebugAgent(args.env_id, await getBukkitAgentJar({ rebuild: args.rebuild })));
+  }, async (args) => manager.installDebugAgent(args.env_id, await getAgentJar({ rebuild: args.rebuild })));
 
   tool("debug_agent_status", "Inspect debug agent mailbox status for a local test server.", {
     env_id: z.string()
   }, (args) => manager.debugAgentStatus(args.env_id));
 
-  tool("debug_eval_js", "Execute JavaScript inside a running Bukkit-family test server through the file mailbox agent.", {
+  tool("debug_eval_js", "Execute JavaScript inside a running test server through the file mailbox agent.", {
     env_id: z.string(),
     code: z.string(),
     thread: z.enum(["main", "async"]).optional(),
@@ -217,7 +217,7 @@ export function createMcpServer(manager = new EnvironmentManager()): McpServer {
     timeout_ms: args.timeout_ms
   }));
 
-  tool("debug_eval_js_file", "Execute a local JavaScript file inside a running Bukkit-family test server through the debug agent.", {
+  tool("debug_eval_js_file", "Execute a local JavaScript file inside a running test server through the debug agent.", {
     env_id: z.string(),
     file: z.string(),
     thread: z.enum(["main", "async"]).optional(),

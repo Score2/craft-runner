@@ -4,10 +4,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { pathExists } from "../lib/fsx.js";
 
-export async function getBukkitAgentJar(options: { rebuild?: boolean } = {}): Promise<string> {
+export async function getAgentJar(options: { rebuild?: boolean } = {}): Promise<string> {
   const root = projectRoot();
-  const agentDir = path.join(root, "agent-bukkit");
-  const jar = path.join(agentDir, "build", "libs", "craft-runner-agent-bukkit-0.1.0.jar");
+  const agentDir = path.join(root, "agent");
+  const jar = path.join(agentDir, "build", "libs", "craft-runner-agent-0.1.0.jar");
   if (options.rebuild || !(await pathExists(jar))) {
     await runGradle(agentDir);
   }

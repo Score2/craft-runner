@@ -1,20 +1,19 @@
-package io.github.score2.craftrunner.agent;
+package io.github.score2.craftrunner.agent.common;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.logging.Logger;
-import org.bukkit.Bukkit;
 import org.graalvm.polyglot.Context;
 import org.graalvm.polyglot.HostAccess;
 import org.graalvm.polyglot.Value;
 
 final class JsDebugExecutor {
-    private final CraftRunnerAgentPlugin plugin;
+    private final AgentPlatform platform;
     private final Logger logger;
 
-    JsDebugExecutor(CraftRunnerAgentPlugin plugin) {
-        this.plugin = plugin;
-        this.logger = plugin.getLogger();
+    JsDebugExecutor(AgentPlatform platform) {
+        this.platform = platform;
+        this.logger = platform.logger();
     }
 
     Object execute(String code) {
@@ -23,10 +22,12 @@ final class JsDebugExecutor {
                 .allowHostClassLookup(className -> true)
                 .build()) {
             Value bindings = context.getBindings("js");
-            bindings.putMember("Bukkit", Bukkit.class);
-            bindings.putMember("server", Bukkit.getServer());
+            putClass(bindings, "Bukkit", "org.bukkit.Bukkit");
+            putClass(bindings, "MinecraftServer", "net.minecraft.server.MinecraftServer");
+            bindings.putMember("platform", platform.platformName());
+            bindings.putMember("server", platform.serverObject());
             bindings.putMember("logger", logger);
-            bindings.putMember("plugin", plugin);
+            bindings.putMember("plugin", platform.pluginObject());
             bindings.putMember("agent", this);
             Value value = context.eval("js", code);
             return serializeValue(value);
@@ -38,6 +39,14 @@ final class JsDebugExecutor {
             return "null";
         }
         return value.getClass().getName() + ": " + value;
+    }
+
+    private void putClass(Value bindings, String name, String className) {
+        try {
+            bindings.putMember(name, Class.forName(className));
+        } catch (ClassNotFoundException ignored) {
+            // Platform-specific convenience binding is unavailable.
+        }
     }
 
     private Object serializeValue(Value value) {
