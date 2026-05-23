@@ -1,0 +1,31 @@
+import { spawn } from "node:child_process";
+import fs from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { pathExists } from "../lib/fsx.js";
+
+export async function getBukkitAgentJar(options: { rebuild?: boolean } = {}): Promise<string> {
+  const root = projectRoot();
+  const agentDir = path.join(root, "agent-bukkit");
+  const jar = path.join(agentDir, "build", "libs", "craft-runner-agent-bukkit-0.1.0.jar");
+  if (options.rebuild || !(await pathExists(jar))) {
+    await runGradle(agentDir);
+  }
+  await fs.access(jar);
+  return jar;
+}
+
+function projectRoot(): string {
+  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+}
+
+async function runGradle(agentDir: string): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn("gradle", ["-p", agentDir, "jar"], {
+      cwd: path.dirname(agentDir),
+      stdio: ["ignore", "inherit", "inherit"]
+    });
+    child.on("error", reject);
+    child.on("exit", (code) => code === 0 ? resolve() : reject(new Error(`gradle exited with code ${code}`)));
+  });
+}

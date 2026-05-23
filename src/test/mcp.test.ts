@@ -19,6 +19,8 @@ test("MCP server exposes craft-runner tools over stdio", async () => {
     assert.equal(names.has("download_core"), true);
     assert.equal(names.has("read_environment_log"), true);
     assert.equal(names.has("list_java_installations"), true);
+    assert.equal(names.has("debug_install_agent"), true);
+    assert.equal(names.has("debug_eval_js"), true);
   } finally {
     await client.close();
   }

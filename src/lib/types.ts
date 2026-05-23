@@ -91,10 +91,23 @@ export type EnvironmentMetadata = {
     xmx: string;
   };
   pid?: number;
+  debug_agent?: {
+    token: string;
+    mailbox_dir: string;
+    agent_jar: string;
+    installed_at: string;
+  };
   status: EnvironmentStatus;
   created_at: string;
   updated_at: string;
   events: EnvironmentEvent[];
+};
+
+export type DebugEvalInput = {
+  env_id: string;
+  code: string;
+  thread?: "main" | "async";
+  timeout_ms?: number;
 };
 
 export type EnvironmentEvent = {

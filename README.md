@@ -107,8 +107,38 @@ craft-runner completion install zsh --dir ~/.zsh/completions
 - `read_environment_log`
 - `download_core`
 - `list_java_installations`
+- `debug_install_agent`
+- `debug_agent_status`
+- `debug_eval_js`
+- `debug_eval_js_file`
 
 Remote and Docker runners are intentionally not implemented yet.
+
+## JS Debug Agent
+
+For Bukkit-family servers, craft-runner can install a local debug agent plugin.
+The agent uses GraalJS and communicates through files in the server directory,
+without opening another port.
+
+```sh
+craftr debug install-agent test-paper
+craftr server restart test-paper
+craftr debug status test-paper
+craftr debug js test-paper --code "Bukkit.getOnlinePlayers().size()"
+```
+
+Mailbox path:
+
+```text
+<server_dir>/.craft-runner-agent/
+  config.json
+  requests/
+  responses/
+  tmp/
+```
+
+Each server gets a unique token in `.craft-runner-agent/config.json`; the agent
+ignores requests with a mismatched token.
 
 ## Core Installation Cache
 

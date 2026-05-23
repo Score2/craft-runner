@@ -6,6 +6,7 @@ import path from "node:path";
 import { EnvironmentManager } from "../env/manager.js";
 import { getJavaInfo, listJavaInstallations, validateJavaForMinecraft } from "../java/discovery.js";
 import { CORE_PROVIDERS, resolveCore, searchCores } from "../core/providers.js";
+import { getBukkitAgentJar } from "../debug/agentJar.js";
 
 const manager = new EnvironmentManager();
 const rawArgs = process.argv.slice(2);
@@ -32,6 +33,19 @@ async function run(domain: string | undefined, action: string | undefined, args:
   if (!domain || domain === "--help" || domain === "-h" || domain === "help") return usage();
   if (commandDomain === "completion" && action === "zsh") return zshCompletion();
   if (commandDomain === "completion" && action === "install") return installCompletion(required(args[0], "shell"), args.slice(1));
+  if (commandDomain === "debug" && action === "install-agent") {
+    return manager.installDebugAgent(required(args[0], "server id"), await getBukkitAgentJar({ rebuild: args.includes("--rebuild") }));
+  }
+  if (commandDomain === "debug" && action === "status") return manager.debugAgentStatus(required(args[0], "server id"));
+  if (commandDomain === "debug" && action === "js") {
+    const code = valueAfter(args, "--code") ?? (valueAfter(args, "--file") ? await fs.readFile(required(valueAfter(args, "--file"), "js file"), "utf8") : undefined);
+    return manager.debugEvalJs({
+      env_id: required(args[0], "server id"),
+      code: required(code, "js code"),
+      thread: (valueAfter(args, "--thread") as "main" | "async" | undefined) ?? "main",
+      timeout_ms: numberAfter(args, "--timeout-ms")
+    });
+  }
   if (commandDomain === "java" && action === "list") {
     const installations = await listJavaInstallations();
     if (args.includes("--refs")) {
@@ -191,6 +205,9 @@ function usage(): string {
     "  craft-runner server events <id>",
     "  craft-runner server wait-ready <id> [--timeout-ms <ms>]",
     "  craft-runner server command <id> <command>",
+    "  craft-runner debug install-agent <server-id> [--rebuild]",
+    "  craft-runner debug status <server-id>",
+    "  craft-runner debug js <server-id> (--code <js>|--file <file.js>) [--thread main|async]",
     "  craft-runner env ...    (alias for server)",
     "  craft-runner completion zsh",
     "  craft-runner completion install zsh [--dir <dir>]"
@@ -409,6 +426,47 @@ function formatResult(domain: string | undefined, action: string | undefined, re
     return stringValue(result.response);
   }
 
+  if (domain === "debug" && action === "install-agent" && isRecord(result)) {
+    return [
+      "Debug agent installed.",
+      formatEnvironment(result),
+      "",
+      "Restart or start the server so Bukkit loads plugins/craft-runner-agent.jar."
+    ].join("\n");
+  }
+
+  if (domain === "debug" && action === "status" && isRecord(result)) {
+    return details("Debug agent", [
+      ["Server", result.env_id],
+      ["Configured", result.configured ? "yes" : "no"],
+      ["Agent jar", result.agent_jar],
+      ["Agent jar exists", result.agent_jar_exists ? "yes" : "no"],
+      ["Mailbox", result.mailbox_dir],
+      ["Mailbox exists", result.mailbox_exists ? "yes" : "no"],
+      ["Requests dir", result.requests_dir_exists ? "yes" : "no"],
+      ["Responses dir", result.responses_dir_exists ? "yes" : "no"],
+      ["Installed at", result.installed_at]
+    ]);
+  }
+
+  if (domain === "debug" && action === "js" && isRecord(result)) {
+    if (result.ok) {
+      const value = isRecord(result.result) ? result.result.value : result.result;
+      const type = isRecord(result.result) ? result.result.type : typeof value;
+      return details("Debug result", [
+        ["OK", "yes"],
+        ["Type", type],
+        ["Value", value],
+        ["Duration", `${result.durationMs ?? result.duration_ms ?? "?"} ms`]
+      ]);
+    }
+    return details("Debug error", [
+      ["OK", "no"],
+      ["Error", result.error],
+      ["Stack", result.stack]
+    ]);
+  }
+
   if (Array.isArray(result)) {
     if (result.length === 0) return "No results.";
     if (result.every(isRecord)) return objectTable(result);
@@ -505,12 +563,13 @@ _craft_runner_java_refs() {
 }
 
 _craft_runner() {
-  local -a commands java_commands core_commands env_commands completion_commands loaders
+  local -a commands java_commands core_commands env_commands debug_commands completion_commands loaders
   commands=(
     'java:discover and inspect Java installations'
     'core:manage cached Minecraft server cores'
     'server:manage local Minecraft test servers'
     'env:alias for server'
+    'debug:execute JS through the Bukkit file mailbox agent'
     'completion:generate shell completion scripts'
     'help:show command help'
   )
@@ -546,6 +605,11 @@ _craft_runner() {
     'events:show lifecycle events'
     'wait-ready:wait for server readiness'
     'command:send a server command through RCON'
+  )
+  debug_commands=(
+    'install-agent:install Bukkit JS debug agent'
+    'status:show debug agent status'
+    'js:execute JavaScript through the debug agent'
   )
   completion_commands=('zsh:generate zsh completion script')
   loaders=(custom vanilla paper purpur folia fabric forge neoforge spigot craftbukkit)
@@ -664,6 +728,28 @@ _craft_runner() {
           ;;
         list)
           _arguments '--ids[print only environment ids]'
+          return
+          ;;
+      esac
+      ;;
+    debug)
+      if (( CURRENT == 3 )); then
+        _describe 'debug command' debug_commands
+        return
+      fi
+      case "$words[3]" in
+        install-agent|status)
+          if (( CURRENT == 4 )); then
+            _craft_runner_env_ids
+            return
+          fi
+          ;;
+        js)
+          if (( CURRENT == 4 )); then
+            _craft_runner_env_ids
+            return
+          fi
+          _arguments '--code[JavaScript code]' '--file[JavaScript file]:file:_files -g "*.js"' '--thread[execution thread]:thread:(main async)' '--timeout-ms[timeout milliseconds]'
           return
           ;;
       esac

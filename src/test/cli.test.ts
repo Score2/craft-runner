@@ -72,6 +72,11 @@ test("CLI can create a test server with a custom jar", async () => {
 
   const list = await execFileAsync("node", ["dist/bin/cli.js", "server", "list"], { cwd: process.cwd(), env });
   assert.match(list.stdout, /cli-create-test/);
+
+  const install = await execFileAsync("node", ["dist/bin/cli.js", "debug", "install-agent", "cli-create-test"], { cwd: process.cwd(), env });
+  assert.match(install.stdout, /Debug agent installed/);
+  const status = await execFileAsync("node", ["dist/bin/cli.js", "debug", "status", "cli-create-test"], { cwd: process.cwd(), env });
+  assert.match(status.stdout, /Configured\s+yes/);
 });
 
 test("CLI installs zsh completion to an explicit directory", async () => {

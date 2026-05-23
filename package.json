@@ -10,8 +10,13 @@
     "craftr": "./dist/bin/cli.js"
   },
   "files": [
+    "agent-bukkit/build.gradle.kts",
+    "agent-bukkit/build/libs/*.jar",
+    "agent-bukkit/settings.gradle.kts",
+    "agent-bukkit/src",
     "dist/bin",
     "dist/core",
+    "dist/debug",
     "dist/env",
     "dist/java",
     "dist/lib",
@@ -21,7 +26,9 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json && node -e \"const fs=require('fs'); for (const f of ['dist/bin/mcp.js','dist/bin/cli.js']) fs.chmodSync(f, 0o755)\"",
+    "build": "npm run build:ts && npm run build:agent",
+    "build:ts": "tsc -p tsconfig.json && node -e \"const fs=require('fs'); for (const f of ['dist/bin/mcp.js','dist/bin/cli.js']) fs.chmodSync(f, 0o755)\"",
+    "build:agent": "gradle -p agent-bukkit jar",
     "prepare": "npm run build",
     "test": "npm run build && node --test dist/test/**/*.test.js",
     "lint": "tsc -p tsconfig.json --noEmit",

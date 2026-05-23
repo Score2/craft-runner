@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import crypto from "node:crypto";
 import { CoreCache } from "../core/cache.js";
 import { resolveCore } from "../core/providers.js";
 import { CoreInstallationManager } from "../core/installation.js";
@@ -10,10 +11,11 @@ import { loadConfig } from "../lib/config.js";
 import {
   CreateEnvironmentInput,
   CraftRunnerConfig,
+  DebugEvalInput,
   EnvironmentEvent,
   EnvironmentMetadata
 } from "../lib/types.js";
-import { ensureDir, pathExists, resolveInside, validateEnvironmentId, writeJson } from "../lib/fsx.js";
+import { ensureDir, pathExists, readJson, resolveInside, validateEnvironmentId, writeJson } from "../lib/fsx.js";
 import { randomId } from "../lib/hash.js";
 import { getJavaInfo, resolveJavaCommand, validateJavaForMinecraft } from "../java/discovery.js";
 import { MetadataStore } from "../storage/metadata.js";
@@ -316,6 +318,90 @@ export class EnvironmentManager {
     addEvent(env, "command_sent", `Sent command: ${command}`);
     await this.store.saveEnvironment(env);
     return { response };
+  }
+
+  async installDebugAgent(id: string, agentJarPath: string): Promise<EnvironmentMetadata> {
+    const env = await this.get(id);
+    const token = env.debug_agent?.token ?? randomId("debug");
+    const mailboxDir = path.join(env.server_dir, ".craft-runner-agent");
+    await ensureDir(path.join(env.server_dir, "plugins"));
+    await ensureDir(path.join(mailboxDir, "requests"));
+    await ensureDir(path.join(mailboxDir, "responses"));
+    await ensureDir(path.join(mailboxDir, "tmp"));
+    const targetJar = path.join(env.server_dir, "plugins", "craft-runner-agent.jar");
+    await fs.copyFile(agentJarPath, targetJar);
+    await writeJson(path.join(mailboxDir, "config.json"), {
+      token,
+      pollIntervalMs: 250
+    });
+    env.debug_agent = {
+      token,
+      mailbox_dir: mailboxDir,
+      agent_jar: targetJar,
+      installed_at: new Date().toISOString()
+    };
+    addEvent(env, "debug_agent_installed", "Craft Runner debug agent installed", { mailbox_dir: mailboxDir });
+    await this.store.saveEnvironment(env);
+    return env;
+  }
+
+  async debugAgentStatus(id: string): Promise<Record<string, unknown>> {
+    const env = await this.get(id);
+    const mailboxDir = env.debug_agent?.mailbox_dir ?? path.join(env.server_dir, ".craft-runner-agent");
+    const agentJar = env.debug_agent?.agent_jar ?? path.join(env.server_dir, "plugins", "craft-runner-agent.jar");
+    return {
+      env_id: env.id,
+      configured: Boolean(env.debug_agent?.token),
+      mailbox_dir: mailboxDir,
+      mailbox_exists: await pathExists(mailboxDir),
+      agent_jar: agentJar,
+      agent_jar_exists: await pathExists(agentJar),
+      requests_dir_exists: await pathExists(path.join(mailboxDir, "requests")),
+      responses_dir_exists: await pathExists(path.join(mailboxDir, "responses")),
+      installed_at: env.debug_agent?.installed_at
+    };
+  }
+
+  async debugEvalJs(input: DebugEvalInput): Promise<unknown> {
+    const env = await this.get(input.env_id);
+    if (!env.debug_agent?.token) {
+      throw new Error("debug agent is not installed for this server");
+    }
+    const mailboxDir = env.debug_agent.mailbox_dir;
+    const requestId = randomId("req");
+    const timeoutMs = input.timeout_ms ?? 5000;
+    const request = {
+      id: requestId,
+      token: env.debug_agent.token,
+      language: "js",
+      thread: input.thread ?? "main",
+      timeoutMs,
+      code: input.code
+    };
+
+    await ensureDir(path.join(mailboxDir, "requests"));
+    await ensureDir(path.join(mailboxDir, "responses"));
+    await ensureDir(path.join(mailboxDir, "tmp"));
+    const tmpFile = path.join(mailboxDir, "tmp", `${requestId}-${crypto.randomUUID()}.json.tmp`);
+    const requestFile = path.join(mailboxDir, "requests", `${requestId}.json`);
+    await fs.writeFile(tmpFile, `${JSON.stringify(request, null, 2)}\n`);
+    await fs.rename(tmpFile, requestFile);
+
+    const responseFile = path.join(mailboxDir, "responses", `${requestId}.json`);
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() <= deadline) {
+      if (await pathExists(responseFile)) {
+        const response = await readJson<Record<string, unknown>>(responseFile, {});
+        addEvent(env, "debug_eval_js", "Executed JS through debug agent", {
+          request_id: requestId,
+          ok: response.ok
+        });
+        await this.store.saveEnvironment(env);
+        return response;
+      }
+      await sleep(100);
+    }
+    throw new Error(`debug agent response timed out after ${timeoutMs}ms; request id: ${requestId}`);
   }
 
   private async writeServerFiles(
