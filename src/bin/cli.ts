@@ -30,6 +30,7 @@ try {
 
 async function run(domain: string | undefined, action: string | undefined, args: string[]): Promise<unknown> {
   if (!domain || domain === "--help" || domain === "-h" || domain === "help") return usage();
+  if (domain === "stats" || domain === "stat" || domain === "status") return manager.stats();
   if (domain === "completion" && action === "zsh") return zshCompletion();
   if (domain === "completion" && action === "install") return installCompletion(required(args[0], "shell"), args.slice(1));
   if (domain === "debug" && action === "install-agent") {
@@ -175,6 +176,7 @@ function usage(): string {
   return [
     "Usage:",
     "  craft-runner [--json] <command>",
+    "  craft-runner stats",
     "  craft-runner java list",
     "  craft-runner java info [ref]",
     "  craft-runner java validate <minecraft-version> [--java <ref>]",
@@ -288,6 +290,10 @@ function formatResult(domain: string | undefined, action: string | undefined, re
       "",
       String(result.note ?? "")
     ].join("\n").trimEnd();
+  }
+
+  if (["stats", "stat", "status"].includes(domain ?? "") && isRecord(result)) {
+    return formatStats(result);
   }
 
   if (domain === "java" && action === "list" && Array.isArray(result)) {
@@ -504,6 +510,38 @@ function formatServer(server: Record<string, unknown>): string {
   ]);
 }
 
+function formatStats(stats: Record<string, unknown>): string {
+  const servers = isRecord(stats.servers) ? stats.servers : {};
+  const cores = isRecord(stats.cores) ? stats.cores : {};
+  const disk = isRecord(stats.disk) ? stats.disk : {};
+  const paths = isRecord(stats.paths) ? stats.paths : {};
+  const byStatus = isRecord(servers.by_status) ? servers.by_status : {};
+  const byLoader = isRecord(servers.by_loader) ? servers.by_loader : {};
+  return [
+    details("Stats", [
+      ["Generated", stats.generated_at],
+      ["Servers", `${servers.total ?? 0} total, ${servers.running ?? 0} running, ${servers.stopped ?? 0} stopped, ${servers.created ?? 0} created`],
+      ["Server storage", typeof servers.disk_bytes === "number" ? formatBytes(servers.disk_bytes) : servers.disk_bytes],
+      ["Cores", `${cores.total ?? 0} cached (${typeof cores.file_bytes === "number" ? formatBytes(cores.file_bytes) : cores.file_bytes} jars)`],
+      ["Core cache", typeof cores.cache_bytes === "number" ? formatBytes(cores.cache_bytes) : cores.cache_bytes],
+      ["Total tracked disk", typeof disk.tracked_bytes === "number" ? formatBytes(disk.tracked_bytes) : disk.tracked_bytes]
+    ]),
+    "",
+    details("Breakdown", [
+      ["By status", formatCounts(byStatus)],
+      ["By loader", formatCounts(byLoader)],
+      ["Persistent", servers.persistent],
+      ["Temporary", servers.temporary]
+    ]),
+    "",
+    details("Paths", [
+      ["Server base", paths.server_base_dir],
+      ["Cache", paths.cache_dir],
+      ["State", paths.state_dir]
+    ])
+  ].join("\n").trimEnd();
+}
+
 function details(title: string | undefined, rows: Array<[string, unknown]>): string {
   const filtered = rows.filter(([, value]) => value !== undefined && value !== "");
   const width = filtered.reduce((max, [key]) => Math.max(max, key.length), 0);
@@ -536,6 +574,13 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
 }
 
+function formatCounts(value: Record<string, unknown>): string {
+  const entries = Object.entries(value).filter(([, count]) => Number(count) > 0);
+  return entries.length === 0
+    ? "-"
+    : entries.map(([key, count]) => `${key}:${count}`).join(", ");
+}
+
 function isRecord(value: unknown): value is Record<string, any> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -564,6 +609,7 @@ _craft_runner_java_refs() {
 _craft_runner() {
   local -a commands java_commands core_commands server_commands debug_commands completion_commands loaders
   commands=(
+    'stats:show current craft-runner statistics'
     'java:discover and inspect Java installations'
     'core:manage cached Minecraft server cores'
     'server:manage local Minecraft test servers'

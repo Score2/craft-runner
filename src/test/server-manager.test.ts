@@ -34,6 +34,12 @@ test("ServerManager creates server, writes files, injects files, and reads log r
   assert.deepEqual((await manager.tailLog(server.id, 2)).lines, ["d", ""]);
   assert.deepEqual((await manager.readLog(server.id, { from_line: 2, to_line: 3 })).lines, ["b", "c"]);
 
+  const stats = await manager.stats();
+  assert.equal((stats.servers as Record<string, unknown>).total, 1);
+  assert.equal((stats.servers as Record<string, unknown>).created, 1);
+  assert.equal((stats.cores as Record<string, unknown>).total, 1);
+  assert.equal(typeof (stats.disk as Record<string, unknown>).tracked_bytes, "number");
+
   await manager.destroy(server.id);
   assert.equal((await manager.list()).length, 0);
 });

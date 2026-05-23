@@ -19,6 +19,7 @@ test("MCP server exposes craft-runner tools over stdio", async () => {
     const tools = await client.listTools();
     const names = new Set(tools.tools.map((tool) => tool.name));
     assert.equal(names.has("create_server"), true);
+    assert.equal(names.has("get_stats"), true);
     assert.equal(names.has("download_core"), true);
     assert.equal(names.has("read_server_log"), true);
     assert.equal(names.has("list_java_installations"), true);
@@ -31,6 +32,12 @@ test("MCP server exposes craft-runner tools over stdio", async () => {
     const text = content.find((item) => item.type === "text")?.text ?? "";
     assert.match(text, /cr\.common/);
     assert.match(text, /cr\.platform/);
+
+    const stats = await client.callTool({ name: "get_stats", arguments: {} });
+    const statsContent = stats.content as Array<{ type: string; text?: string }>;
+    const statsText = statsContent.find((item) => item.type === "text")?.text ?? "";
+    assert.match(statsText, /"servers"/);
+    assert.match(statsText, /"disk"/);
   } finally {
     await client.close();
   }

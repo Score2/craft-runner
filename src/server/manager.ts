@@ -114,6 +114,65 @@ export class ServerManager {
     return Promise.all(servers.map((server) => this.refreshStatus(server)));
   }
 
+  async stats(): Promise<Record<string, unknown>> {
+    await this.init();
+    const servers = await this.list();
+    const cores = await this.coreCache.list();
+    const statusCounts = countBy(servers, (server) => server.status);
+    const loaderCounts = countBy(servers, (server) => server.loader);
+    const serverEntries = await Promise.all(servers.map(async (server) => ({
+      id: server.id,
+      status: server.status,
+      loader: server.loader,
+      minecraft_version: server.minecraft_version,
+      pid: server.pid,
+      persistent: server.persistent,
+      disk_bytes: await directorySize(path.join(server.base_dir, "servers", server.id))
+    })));
+    const serverBytes = serverEntries.reduce((sum, server) => sum + server.disk_bytes, 0);
+    const coreFileBytes = cores.reduce((sum, core) => sum + core.size, 0);
+    const coreCacheBytes = await directorySize(this.coreCache.coresDir);
+    const cacheBytes = await directorySize(this.config.cache_dir);
+    const serverBaseBytes = await directorySize(this.config.server_base_dir);
+    const stateBytes = await directorySize(this.config.state_dir);
+
+    return {
+      generated_at: new Date().toISOString(),
+      paths: {
+        cache_dir: this.config.cache_dir,
+        core_cache_dir: this.coreCache.coresDir,
+        server_base_dir: this.config.server_base_dir,
+        state_dir: this.config.state_dir
+      },
+      servers: {
+        total: servers.length,
+        running: statusCounts.running ?? 0,
+        stopped: statusCounts.stopped ?? 0,
+        created: statusCounts.created ?? 0,
+        failed: statusCounts.failed ?? 0,
+        by_status: statusCounts,
+        by_loader: loaderCounts,
+        persistent: servers.filter((server) => server.persistent).length,
+        temporary: servers.filter((server) => !server.persistent).length,
+        disk_bytes: serverBytes,
+        instances: serverEntries.sort((a, b) => b.disk_bytes - a.disk_bytes)
+      },
+      cores: {
+        total: cores.length,
+        by_loader: countBy(cores, (core) => core.loader),
+        file_bytes: coreFileBytes,
+        cache_bytes: coreCacheBytes
+      },
+      disk: {
+        cache_bytes: cacheBytes,
+        core_cache_bytes: coreCacheBytes,
+        server_base_bytes: serverBaseBytes,
+        state_bytes: stateBytes,
+        tracked_bytes: cacheBytes + serverBaseBytes + (this.config.state_dir.startsWith(this.config.cache_dir) ? 0 : stateBytes)
+      }
+    };
+  }
+
   async get(id: string): Promise<ServerMetadata> {
     await this.init();
     const server = await this.store.getServer(id);
@@ -519,6 +578,42 @@ async function collectFiles(root: string, base: string, result: string[]): Promi
   for (const entry of await fs.readdir(root, { withFileTypes: true })) {
     await collectFiles(path.join(root, entry.name), base, result);
   }
+}
+
+async function directorySize(root: string): Promise<number> {
+  try {
+    const stat = await fs.lstat(root);
+    if (!stat.isDirectory()) {
+      return stat.size;
+    }
+    let total = stat.size;
+    for (const entry of await fs.readdir(root, { withFileTypes: true })) {
+      const full = path.join(root, entry.name);
+      if (entry.isSymbolicLink()) {
+        total += (await fs.lstat(full)).size;
+      } else if (entry.isDirectory()) {
+        total += await directorySize(full);
+      } else {
+        total += (await fs.lstat(full)).size;
+      }
+    }
+    return total;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "EACCES" || code === "EPERM") {
+      return 0;
+    }
+    throw error;
+  }
+}
+
+function countBy<T>(items: T[], key: (item: T) => string): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const item of items) {
+    const value = key(item) || "unknown";
+    counts[value] = (counts[value] ?? 0) + 1;
+  }
+  return Object.fromEntries(Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)));
 }
 
 async function readLines(file: string): Promise<string[]> {

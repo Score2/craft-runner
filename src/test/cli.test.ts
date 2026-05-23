@@ -12,6 +12,7 @@ test("CLI help prints real newlines", async () => {
   assert.match(await fs.readFile(path.join(process.cwd(), "dist", "bin", "cli.js"), "utf8"), /^#!\/usr\/bin\/env node\n/);
   const result = await execFileAsync("node", ["dist/bin/cli.js", "--help"], { cwd: process.cwd() });
   assert.match(result.stdout, /^Usage:\n  craft-runner \[--json\] <command>\n/);
+  assert.match(result.stdout, /craft-runner stats/);
   assert.match(result.stdout, /craft-runner java list/);
   assert.match(result.stdout, /craft-runner core info <id>/);
   assert.match(result.stdout, /craft-runner core remove <id>/);
@@ -29,6 +30,7 @@ test("CLI prints zsh completion script", async () => {
   assert.match(result.stdout, /'remove:remove a cached core'/);
   assert.match(result.stdout, /'logs:read server logs'/);
   assert.match(result.stdout, /'server:manage local Minecraft test servers'/);
+  assert.match(result.stdout, /'stats:show current craft-runner statistics'/);
 });
 
 test("CLI exposes read-only core and java utility commands", async () => {
@@ -73,6 +75,11 @@ test("CLI can create a test server with a custom jar", async () => {
 
   const list = await execFileAsync("node", ["dist/bin/cli.js", "server", "list"], { cwd: process.cwd(), env: testEnv });
   assert.match(list.stdout, /cli-create-test/);
+
+  const stats = await execFileAsync("node", ["dist/bin/cli.js", "stats"], { cwd: process.cwd(), env: testEnv });
+  assert.match(stats.stdout, /^Stats\n/);
+  assert.match(stats.stdout, /Servers\s+1 total/);
+  assert.match(stats.stdout, /Total tracked disk/);
 
   const install = await execFileAsync("node", ["dist/bin/cli.js", "debug", "install-agent", "cli-create-test"], { cwd: process.cwd(), env: testEnv });
   assert.match(install.stdout, /Debug agent installed/);

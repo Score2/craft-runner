@@ -59,6 +59,8 @@ export function createMcpServer(manager = new ServerManager()): McpServer {
 
   tool("list_servers", "List known local test servers.", {}, () => manager.list());
 
+  tool("get_stats", "Show current craft-runner statistics, including disk usage, cached cores, server counts, and running server count.", {}, () => manager.stats());
+
   tool("get_server", "Get one server status and metadata.", {
     server_id: z.string()
   }, (args) => manager.get(args.server_id));

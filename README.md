@@ -51,6 +51,7 @@ craft-runner server list
 craft-runner server info test-server
 craft-runner server logs test-server --tail 120
 craft-runner server files test-server
+craft-runner stats
 craft-runner core list
 craft-runner core info paper-1.21.4-123
 craft-runner core verify paper-1.21.4-123
@@ -97,6 +98,7 @@ craft-runner completion install zsh --dir ~/.zsh/completions
 ## Main MCP Tools
 
 - `create_server`
+- `get_stats`
 - `start_server`
 - `stop_server`
 - `destroy_server`
