@@ -10,7 +10,7 @@
   "environment": "server",
   "entrypoints": {
     "server": [
-      "io.github.score2.craftrunner.agent.platform.fabric.CraftRunnerFabricMod"
+      "io.insinuate.score2.craftrunner.agent.platform.fabric.CraftRunnerFabricMod"
     ]
   },
   "depends": {

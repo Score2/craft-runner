@@ -1,4 +1,4 @@
-package io.github.score2.craftrunner.agent.common;
+package io.insinuate.score2.craftrunner.agent.common;
 
 public final class AgentConfig {
     String token = "";

@@ -57,8 +57,8 @@ export function sanitizeIdPart(input: string): string {
   return input.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
-export function validateEnvironmentId(id: string): void {
+export function validateServerId(id: string): void {
   if (!/^[A-Za-z0-9._-]+$/.test(id)) {
-    throw new Error("environment id may only contain letters, digits, dots, underscores, and dashes");
+    throw new Error("server id may only contain letters, digits, dots, underscores, and dashes");
   }
 }

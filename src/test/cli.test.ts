@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 
 test("CLI help prints real newlines", async () => {
+  assert.match(await fs.readFile(path.join(process.cwd(), "dist", "bin", "cli.js"), "utf8"), /^#!\/usr\/bin\/env node\n/);
   const result = await execFileAsync("node", ["dist/bin/cli.js", "--help"], { cwd: process.cwd() });
   assert.match(result.stdout, /^Usage:\n  craft-runner \[--json\] <command>\n/);
   assert.match(result.stdout, /craft-runner java list/);
@@ -16,17 +17,17 @@ test("CLI help prints real newlines", async () => {
   assert.match(result.stdout, /craft-runner core remove <id>/);
   assert.match(result.stdout, /craft-runner server create --id <id>/);
   assert.match(result.stdout, /craft-runner server logs <id>/);
-  assert.match(result.stdout, /craft-runner env \.\.\.    \(alias for server\)/);
+  assert.equal(result.stdout.includes("craft-runner env"), false);
   assert.equal(result.stdout.includes("\\n"), false);
 });
 
 test("CLI prints zsh completion script", async () => {
   const result = await execFileAsync("node", ["dist/bin/cli.js", "completion", "zsh"], { cwd: process.cwd() });
   assert.match(result.stdout, /^#compdef craft-runner craftr\n/);
-  assert.match(result.stdout, /_craft_runner_env_ids/);
-  assert.match(result.stdout, /\$words\[1\] env list --ids/);
+  assert.match(result.stdout, /_craft_runner_server_ids/);
+  assert.match(result.stdout, /\$words\[1\] server list --ids/);
   assert.match(result.stdout, /'remove:remove a cached core'/);
-  assert.match(result.stdout, /'logs:read environment logs'/);
+  assert.match(result.stdout, /'logs:read server logs'/);
   assert.match(result.stdout, /'server:manage local Minecraft test servers'/);
 });
 
@@ -50,10 +51,10 @@ test("CLI can create a test server with a custom jar", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "craft-runner-cli-create-"));
   const jar = path.join(root, "server.jar");
   await fs.writeFile(jar, "fake jar");
-  const env = {
+  const testEnv = {
     ...process.env,
     CRAFT_RUNNER_CACHE_DIR: path.join(root, "cache"),
-    CRAFT_RUNNER_ENV_BASE_DIR: path.join(root, "envs"),
+    CRAFT_RUNNER_SERVER_BASE_DIR: path.join(root, "servers"),
     CRAFT_RUNNER_STATE_DIR: path.join(root, "state")
   };
   const result = await execFileAsync("node", [
@@ -66,16 +67,16 @@ test("CLI can create a test server with a custom jar", async () => {
     jar,
     "--minecraft-version",
     "1.16.5"
-  ], { cwd: process.cwd(), env });
+  ], { cwd: process.cwd(), env: testEnv });
   assert.match(result.stdout, /^Server\n/);
   assert.match(result.stdout, /ID\s+cli-create-test/);
 
-  const list = await execFileAsync("node", ["dist/bin/cli.js", "server", "list"], { cwd: process.cwd(), env });
+  const list = await execFileAsync("node", ["dist/bin/cli.js", "server", "list"], { cwd: process.cwd(), env: testEnv });
   assert.match(list.stdout, /cli-create-test/);
 
-  const install = await execFileAsync("node", ["dist/bin/cli.js", "debug", "install-agent", "cli-create-test"], { cwd: process.cwd(), env });
+  const install = await execFileAsync("node", ["dist/bin/cli.js", "debug", "install-agent", "cli-create-test"], { cwd: process.cwd(), env: testEnv });
   assert.match(install.stdout, /Debug agent installed/);
-  const status = await execFileAsync("node", ["dist/bin/cli.js", "debug", "status", "cli-create-test"], { cwd: process.cwd(), env });
+  const status = await execFileAsync("node", ["dist/bin/cli.js", "debug", "status", "cli-create-test"], { cwd: process.cwd(), env: testEnv });
   assert.match(status.stdout, /Configured\s+yes/);
 });
 

@@ -1,4 +1,4 @@
-package io.github.score2.craftrunner.agent.common;
+package io.insinuate.score2.craftrunner.agent.common;
 
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;

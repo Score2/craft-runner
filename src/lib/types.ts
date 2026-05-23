@@ -1,4 +1,4 @@
-export type EnvironmentStatus =
+export type ServerStatus =
   | "created"
   | "starting"
   | "running"
@@ -69,7 +69,7 @@ export type JavaInfo = {
   error?: string;
 };
 
-export type EnvironmentMetadata = {
+export type ServerMetadata = {
   id: string;
   kind: "local";
   server_dir: string;
@@ -98,27 +98,27 @@ export type EnvironmentMetadata = {
     agent_jars?: string[];
     installed_at: string;
   };
-  status: EnvironmentStatus;
+  status: ServerStatus;
   created_at: string;
   updated_at: string;
-  events: EnvironmentEvent[];
+  events: ServerEvent[];
 };
 
 export type DebugEvalInput = {
-  env_id: string;
+  server_id: string;
   code: string;
   thread?: "main" | "async";
   timeout_ms?: number;
 };
 
-export type EnvironmentEvent = {
+export type ServerEvent = {
   at: string;
   type: string;
   message: string;
   data?: Record<string, unknown>;
 };
 
-export type CreateEnvironmentInput = {
+export type CreateServerInput = {
   id?: string;
   core_ref: CoreRef;
   base_dir?: string;
@@ -143,7 +143,7 @@ export type CreateEnvironmentInput = {
 
 export type CraftRunnerConfig = {
   cache_dir: string;
-  env_base_dir: string;
+  server_base_dir: string;
   state_dir: string;
   user_agent: string;
   ports: {

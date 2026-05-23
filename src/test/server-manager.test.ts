@@ -3,18 +3,18 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { EnvironmentManager } from "../env/manager.js";
+import { ServerManager } from "../server/manager.js";
 import { CraftRunnerConfig } from "../lib/types.js";
 
-test("EnvironmentManager creates env, writes files, injects files, and reads log ranges", async () => {
+test("ServerManager creates server, writes files, injects files, and reads log ranges", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "craft-runner-test-"));
   const fakeCore = path.join(root, "fake-server.jar");
   await fs.writeFile(fakeCore, "fake jar");
 
   const config = testConfig(root);
-  const manager = new EnvironmentManager(config);
-  const env = await manager.create({
-    id: "test-env",
+  const manager = new ServerManager(config);
+  const server = await manager.create({
+    id: "test-server",
     core_ref: {
       loader: "custom",
       minecraft_version: "1.16.5",
@@ -22,31 +22,31 @@ test("EnvironmentManager creates env, writes files, injects files, and reads log
     }
   });
 
-  assert.equal(env.id, "test-env");
-  assert.equal(env.port >= 41000 && env.port <= 41020, true);
-  assert.equal(await fs.readFile(path.join(env.server_dir, "eula.txt"), "utf8"), "eula=true\n");
+  assert.equal(server.id, "test-server");
+  assert.equal(server.port >= 41000 && server.port <= 41020, true);
+  assert.equal(await fs.readFile(path.join(server.server_dir, "eula.txt"), "utf8"), "eula=true\n");
 
-  await manager.putFile(env.id, "plugins/config.yml", { content: "enabled: true\n" });
-  assert.equal(await fs.readFile(path.join(env.server_dir, "plugins", "config.yml"), "utf8"), "enabled: true\n");
+  await manager.putFile(server.id, "plugins/config.yml", { content: "enabled: true\n" });
+  assert.equal(await fs.readFile(path.join(server.server_dir, "plugins", "config.yml"), "utf8"), "enabled: true\n");
 
-  await fs.mkdir(path.join(env.server_dir, "logs"), { recursive: true });
-  await fs.writeFile(path.join(env.server_dir, "logs", "latest.log"), "a\nb\nc\nd\n");
-  assert.deepEqual((await manager.tailLog(env.id, 2)).lines, ["d", ""]);
-  assert.deepEqual((await manager.readLog(env.id, { from_line: 2, to_line: 3 })).lines, ["b", "c"]);
+  await fs.mkdir(path.join(server.server_dir, "logs"), { recursive: true });
+  await fs.writeFile(path.join(server.server_dir, "logs", "latest.log"), "a\nb\nc\nd\n");
+  assert.deepEqual((await manager.tailLog(server.id, 2)).lines, ["d", ""]);
+  assert.deepEqual((await manager.readLog(server.id, { from_line: 2, to_line: 3 })).lines, ["b", "c"]);
 
-  await manager.destroy(env.id);
+  await manager.destroy(server.id);
   assert.equal((await manager.list()).length, 0);
 });
 
-test("EnvironmentManager installs debug agent and exchanges JS requests through file mailbox", async () => {
+test("ServerManager installs debug agent and exchanges JS requests through file mailbox", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "craft-runner-debug-test-"));
   const fakeCore = path.join(root, "fake-server.jar");
   const fakeAgent = path.join(root, "fake-agent.jar");
   await fs.writeFile(fakeCore, "fake jar");
   await fs.writeFile(fakeAgent, "fake agent jar");
 
-  const manager = new EnvironmentManager(testConfig(root));
-  const env = await manager.create({
+  const manager = new ServerManager(testConfig(root));
+  const server = await manager.create({
     id: "debug-eval-test",
     core_ref: {
       loader: "custom",
@@ -54,7 +54,7 @@ test("EnvironmentManager installs debug agent and exchanges JS requests through 
       path: fakeCore
     }
   });
-  const installed = await manager.installDebugAgent(env.id, fakeAgent);
+  const installed = await manager.installDebugAgent(server.id, fakeAgent);
   assert.ok(installed.debug_agent?.token);
 
   const responder = respondToFirstDebugRequest(installed.debug_agent.mailbox_dir, {
@@ -66,7 +66,7 @@ test("EnvironmentManager installs debug agent and exchanges JS requests through 
     durationMs: 1
   });
   const response = await manager.debugEvalJs({
-    env_id: env.id,
+    server_id: server.id,
     code: "1 + 1",
     thread: "main",
     timeout_ms: 3000
@@ -86,7 +86,7 @@ test("EnvironmentManager installs debug agent and exchanges JS requests through 
 function testConfig(root: string): CraftRunnerConfig {
   return {
     cache_dir: path.join(root, "cache"),
-    env_base_dir: path.join(root, "envs-base"),
+    server_base_dir: path.join(root, "servers-base"),
     state_dir: path.join(root, "state"),
     user_agent: "craft-runner-test/0.1.0",
     ports: {

@@ -1,4 +1,4 @@
-package io.github.score2.craftrunner.agent.common;
+package io.insinuate.score2.craftrunner.agent.common;
 
 import java.util.LinkedHashMap;
 import java.util.Map;

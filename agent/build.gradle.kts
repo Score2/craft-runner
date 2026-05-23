@@ -2,7 +2,7 @@ plugins {
     java
 }
 
-group = "io.github.score2.craftrunner"
+group = "io.insinuate.score2.craftrunner"
 version = "0.1.0"
 
 java {

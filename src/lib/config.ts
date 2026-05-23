@@ -17,12 +17,12 @@ function userCacheDir(): string {
 
 export function loadConfig(): CraftRunnerConfig {
   const cacheDir = userCacheDir();
-  const envBaseDir =
-    process.env.CRAFT_RUNNER_ENV_BASE_DIR ?? path.join(os.tmpdir(), "craft-runner");
+  const serverBaseDir =
+    process.env.CRAFT_RUNNER_SERVER_BASE_DIR ?? path.join(os.tmpdir(), "craft-runner");
 
   return {
     cache_dir: cacheDir,
-    env_base_dir: envBaseDir,
+    server_base_dir: serverBaseDir,
     state_dir: process.env.CRAFT_RUNNER_STATE_DIR ?? path.join(cacheDir, "state"),
     user_agent:
       process.env.CRAFT_RUNNER_USER_AGENT ??

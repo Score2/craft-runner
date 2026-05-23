@@ -1,7 +1,7 @@
-package io.github.score2.craftrunner.agent.platform.fabric;
+package io.insinuate.score2.craftrunner.agent.platform.fabric;
 
-import io.github.score2.craftrunner.agent.common.AgentPlatform;
-import io.github.score2.craftrunner.agent.common.AgentRuntime;
+import io.insinuate.score2.craftrunner.agent.common.AgentPlatform;
+import io.insinuate.score2.craftrunner.agent.common.AgentRuntime;
 import java.util.logging.Logger;
 import net.fabricmc.api.DedicatedServerModInitializer;
 import net.fabricmc.loader.api.FabricLoader;

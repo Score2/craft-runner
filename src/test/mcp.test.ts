@@ -15,9 +15,9 @@ test("MCP server exposes craft-runner tools over stdio", async () => {
   try {
     const tools = await client.listTools();
     const names = new Set(tools.tools.map((tool) => tool.name));
-    assert.equal(names.has("create_environment"), true);
+    assert.equal(names.has("create_server"), true);
     assert.equal(names.has("download_core"), true);
-    assert.equal(names.has("read_environment_log"), true);
+    assert.equal(names.has("read_server_log"), true);
     assert.equal(names.has("list_java_installations"), true);
     assert.equal(names.has("debug_install_agent"), true);
     assert.equal(names.has("debug_eval_js"), true);

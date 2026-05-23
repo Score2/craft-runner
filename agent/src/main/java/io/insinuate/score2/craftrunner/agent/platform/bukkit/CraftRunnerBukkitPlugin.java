@@ -1,7 +1,7 @@
-package io.github.score2.craftrunner.agent.platform.bukkit;
+package io.insinuate.score2.craftrunner.agent.platform.bukkit;
 
-import io.github.score2.craftrunner.agent.common.AgentPlatform;
-import io.github.score2.craftrunner.agent.common.AgentRuntime;
+import io.insinuate.score2.craftrunner.agent.common.AgentPlatform;
+import io.insinuate.score2.craftrunner.agent.common.AgentRuntime;
 import java.lang.reflect.Method;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;

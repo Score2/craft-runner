@@ -39,7 +39,7 @@ CLI output is human-readable by default. Add `--json` when a script needs the
 raw structured response:
 
 ```sh
-craftr --json env list
+craftr --json server list
 ```
 
 ```sh
@@ -48,21 +48,20 @@ craft-runner java validate 1.21.4 --java sdk:21.0.10-oracle
 craft-runner server create --id test-paper --loader paper --minecraft-version 1.21.4 --start
 craft-runner server create --id local-custom --path ./server.jar --minecraft-version 1.20.4
 craft-runner server list
-craft-runner server info test-env
-craft-runner server logs test-env --tail 120
-craft-runner server files test-env
+craft-runner server info test-server
+craft-runner server logs test-server --tail 120
+craft-runner server files test-server
 craft-runner core list
 craft-runner core info paper-1.21.4-123
 craft-runner core verify paper-1.21.4-123
 craft-runner core remove paper-1.21.4-123
 ```
 
-`env` remains available as a backward-compatible alias for `server`.
 
 The shorter alias `craftr` is also installed:
 
 ```sh
-craftr env list
+craftr server list
 craftr server list
 craftr core list
 ```
@@ -97,14 +96,14 @@ craft-runner completion install zsh --dir ~/.zsh/completions
 
 ## Main MCP Tools
 
-- `create_environment`
-- `start_environment`
-- `stop_environment`
-- `destroy_environment`
-- `put_environment_file`
+- `create_server`
+- `start_server`
+- `stop_server`
+- `destroy_server`
+- `put_server_file`
 - `add_plugin`
-- `tail_environment_log`
-- `read_environment_log`
+- `tail_server_log`
+- `read_server_log`
 - `download_core`
 - `list_java_installations`
 - `debug_install_agent`
@@ -153,5 +152,5 @@ are bound to a specific core, such as `libraries/`, Paper/Purpur cache output, a
 Forge/NeoForge installer output, are prepared centrally under that core's
 installation directory.
 
-Each test environment keeps its own `plugins/`, config, worlds, and logs, while
+Each test server keeps its own `plugins/`, config, worlds, and logs, while
 shareable core-bound directories are linked from the central core installation.

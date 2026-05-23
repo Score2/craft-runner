@@ -3,7 +3,7 @@ import fsSync from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { CoreCache } from "./cache.js";
-import { CoreMetadata, EnvironmentMetadata, MaterializedCore } from "../lib/types.js";
+import { CoreMetadata, ServerMetadata, MaterializedCore } from "../lib/types.js";
 import { ensureDir, pathExists, readJson, writeJson } from "../lib/fsx.js";
 import { resolveJavaCommand } from "../java/discovery.js";
 
@@ -60,13 +60,13 @@ export class CoreInstallationManager {
     };
   }
 
-  async materialize(core: CoreMetadata, env: EnvironmentMetadata): Promise<MaterializedCore> {
-    const prepared = await this.prepare(core, env.java_ref ?? "system");
+  async materialize(core: CoreMetadata, server: ServerMetadata): Promise<MaterializedCore> {
+    const prepared = await this.prepare(core, server.java_ref ?? "system");
     const links: MaterializedCore["links"] = [];
     for (const entry of SHAREABLE_ENTRIES) {
       const source = path.join(prepared.install_dir, entry);
       if (!(await pathExists(source))) continue;
-      const target = path.join(env.server_dir, entry);
+      const target = path.join(server.server_dir, entry);
       const strategy = await materializePath(source, target);
       links.push({ source, target, strategy });
     }
@@ -75,7 +75,7 @@ export class CoreInstallationManager {
       install_dir: prepared.install_dir,
       launch: {
         ...prepared.launch,
-        cwd: env.server_dir
+        cwd: server.server_dir
       },
       links,
       prepared_at: prepared.prepared_at

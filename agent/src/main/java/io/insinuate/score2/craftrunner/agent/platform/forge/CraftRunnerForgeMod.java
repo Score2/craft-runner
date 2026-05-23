@@ -1,22 +1,22 @@
-package io.github.score2.craftrunner.agent.platform.neoforge;
+package io.insinuate.score2.craftrunner.agent.platform.forge;
 
-import io.github.score2.craftrunner.agent.common.AgentPlatform;
-import io.github.score2.craftrunner.agent.common.AgentRuntime;
+import io.insinuate.score2.craftrunner.agent.common.AgentPlatform;
+import io.insinuate.score2.craftrunner.agent.common.AgentRuntime;
 import java.util.logging.Logger;
-import net.neoforged.fml.common.Mod;
-import net.neoforged.neoforge.common.NeoForge;
-import net.neoforged.neoforge.event.server.ServerStartedEvent;
-import net.neoforged.neoforge.event.server.ServerStoppingEvent;
+import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.event.server.ServerStartedEvent;
+import net.minecraftforge.event.server.ServerStoppingEvent;
+import net.minecraftforge.fml.common.Mod;
 
 @Mod("craft_runner_agent")
-public final class CraftRunnerNeoForgeMod implements AgentPlatform {
+public final class CraftRunnerForgeMod implements AgentPlatform {
     private final Logger logger = Logger.getLogger("CraftRunnerAgent");
     private AgentRuntime runtime;
     private Object server;
 
-    public CraftRunnerNeoForgeMod() {
-        NeoForge.EVENT_BUS.addListener(this::onServerStarted);
-        NeoForge.EVENT_BUS.addListener(this::onServerStopping);
+    public CraftRunnerForgeMod() {
+        MinecraftForge.EVENT_BUS.addListener(this::onServerStarted);
+        MinecraftForge.EVENT_BUS.addListener(this::onServerStopping);
     }
 
     private void onServerStarted(ServerStartedEvent event) {
@@ -35,7 +35,7 @@ public final class CraftRunnerNeoForgeMod implements AgentPlatform {
 
     @Override
     public String platformName() {
-        return "neoforge";
+        return "forge";
     }
 
     @Override
@@ -57,7 +57,7 @@ public final class CraftRunnerNeoForgeMod implements AgentPlatform {
         try {
             return event.getClass().getMethod("getServer").invoke(event);
         } catch (ReflectiveOperationException error) {
-            logger.warning("Could not resolve NeoForge server instance: " + error);
+            logger.warning("Could not resolve Forge server instance: " + error);
             return null;
         }
     }
