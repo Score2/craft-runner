@@ -23,7 +23,14 @@ test("MCP server exposes craft-runner tools over stdio", async () => {
     assert.equal(names.has("read_server_log"), true);
     assert.equal(names.has("list_java_installations"), true);
     assert.equal(names.has("debug_install_agent"), true);
+    assert.equal(names.has("debug_agent_api"), true);
     assert.equal(names.has("debug_eval_js"), true);
+
+    const docs = await client.callTool({ name: "debug_agent_api", arguments: {} });
+    const content = docs.content as Array<{ type: string; text?: string }>;
+    const text = content.find((item) => item.type === "text")?.text ?? "";
+    assert.match(text, /cr\.common/);
+    assert.match(text, /cr\.platform/);
   } finally {
     await client.close();
   }

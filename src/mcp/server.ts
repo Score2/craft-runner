@@ -205,7 +205,14 @@ export function createMcpServer(manager = new ServerManager()): McpServer {
     server_id: z.string()
   }, (args) => manager.debugAgentStatus(args.server_id));
 
-  tool("debug_eval_js", "Execute JavaScript inside a running test server through the file mailbox agent.", {
+  tool("debug_agent_api", "Describe the JavaScript DSL exposed by the debug agent. Agents should call this before writing non-trivial debug_eval_js scripts.", {
+    server_id: z.string().optional()
+  }, async (args) => {
+    const serverMeta = args.server_id ? await manager.get(args.server_id) : undefined;
+    return debugAgentApiDocs(serverMeta?.loader);
+  });
+
+  tool("debug_eval_js", "Execute JavaScript inside a running test server through the file mailbox agent. Prefer the documented DSL: cr.common is cross-platform; cr.platform is platform-specific. Call debug_agent_api for examples before complex scripts.", {
     server_id: z.string(),
     code: z.string(),
     thread: z.enum(["main", "async"]).optional(),
@@ -217,7 +224,7 @@ export function createMcpServer(manager = new ServerManager()): McpServer {
     timeout_ms: args.timeout_ms
   }));
 
-  tool("debug_eval_js_file", "Execute a local JavaScript file inside a running test server through the debug agent.", {
+  tool("debug_eval_js_file", "Execute a local JavaScript file inside a running test server through the debug agent. Scripts can use cr.common for cross-platform helpers and cr.platform for platform-specific helpers.", {
     server_id: z.string(),
     file: z.string(),
     thread: z.enum(["main", "async"]).optional(),
@@ -230,6 +237,94 @@ export function createMcpServer(manager = new ServerManager()): McpServer {
   }));
 
   return server;
+}
+
+function debugAgentApiDocs(loader?: string): Record<string, unknown> {
+  const commonMethods = [
+    "cr.common.platformName()",
+    "cr.common.server()",
+    "cr.common.plugin()",
+    "cr.common.logger()",
+    "cr.common.type(className)",
+    "cr.common.classExists(className)",
+    "cr.common.newInstance(className, ...args)",
+    "cr.common.call(target, methodName, ...args)",
+    "cr.common.callStatic(className, methodName, ...args)",
+    "cr.common.get(target, fieldName)",
+    "cr.common.set(target, fieldName, value)",
+    "cr.common.getStatic(className, fieldName)",
+    "cr.common.setStatic(className, fieldName, value)",
+    "cr.common.enumValue(className, name)",
+    "cr.common.list(...items)",
+    "cr.common.setOf(...items)",
+    "cr.common.mapOf(key, value, ...)",
+    "cr.common.array(componentClassName, ...items)",
+    "cr.common.className(value)",
+    "cr.common.inspect(value)",
+    "cr.common.methods(valueOrClassName)",
+    "cr.common.fields(valueOrClassName)"
+  ];
+  const bukkitMethods = [
+    "cr.platform.bukkit()",
+    "cr.platform.isFolia()",
+    "cr.platform.onlinePlayers()",
+    "cr.platform.onlinePlayerNames()",
+    "cr.platform.player(name)",
+    "cr.platform.worlds()",
+    "cr.platform.worldNames()",
+    "cr.platform.world(name)",
+    "cr.platform.plugins()",
+    "cr.platform.plugin(name)",
+    "cr.platform.console()",
+    "cr.platform.dispatchCommand(command)",
+    "cr.platform.material(name)",
+    "cr.platform.namespacedKey(namespace, key)",
+    "cr.platform.pluginKey(key)",
+    "cr.platform.itemStack(materialName, amount)"
+  ];
+  return {
+    namespace: "cr",
+    rule: "Use cr.common for cross-platform Java/Minecraft reflection helpers. Use cr.platform only after checking platform capabilities because these methods depend on the loaded server platform.",
+    current_loader_hint: loader ?? null,
+    common: {
+      methods: commonMethods,
+      examples: [
+        "cr.common.platformName()",
+        "cr.common.callStatic('org.bukkit.Bukkit', 'getOnlinePlayers').size()",
+        "cr.common.inspect(cr.common.server())",
+        "cr.common.methods('net.minecraft.server.MinecraftServer')"
+      ]
+    },
+    platform: {
+      generic: {
+        methods: [
+          "cr.platform.name()",
+          "cr.platform.server()",
+          "cr.platform.plugin()",
+          "cr.platform.serverClassName()",
+          "cr.platform.capabilities()",
+          "cr.platform.supports(capability)"
+        ]
+      },
+      bukkit_family: {
+        applies_to: ["bukkit", "spigot", "paper", "purpur", "folia"],
+        methods: bukkitMethods,
+        examples: [
+          "cr.platform.onlinePlayerNames()",
+          "cr.platform.isFolia()",
+          "cr.platform.dispatchCommand('say hello from craft-runner')",
+          "cr.platform.itemStack('DIAMOND', 1)"
+        ]
+      },
+      fabric_forge_neoforge: {
+        status: "platform-specific shortcut methods are intentionally minimal for now; use cr.common reflection plus cr.platform.server() for loader-specific internals."
+      }
+    },
+    legacy_globals: {
+      note: "Raw globals remain available as escape hatches, but new scripts should prefer cr.*.",
+      names: ["Bukkit when present", "MinecraftServer when present", "server", "plugin", "logger", "agent", "platform"]
+    }
+  };
 }
 
 function jsonResult(value: unknown) {

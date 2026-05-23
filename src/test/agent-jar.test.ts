@@ -18,4 +18,7 @@ test("agent jar preserves Graal multi-release metadata", async () => {
 
   const listing = await execFileAsync("jar", ["tf", jar], { cwd: process.cwd(), maxBuffer: 20 * 1024 * 1024 });
   assert.match(listing.stdout, /META-INF\/versions\/9\/com\/oracle\/truffle\/api\/impl\/CheckMultiReleaseSupport\.class/);
+  assert.match(listing.stdout, /io\/insinuate\/score2\/craftrunner\/agent\/common\/CraftRunnerDebugApi\.class/);
+  assert.match(listing.stdout, /io\/insinuate\/score2\/craftrunner\/agent\/common\/CommonDebugApi\.class/);
+  assert.match(listing.stdout, /io\/insinuate\/score2\/craftrunner\/agent\/platform\/bukkit\/BukkitDebugApi\.class/);
 });

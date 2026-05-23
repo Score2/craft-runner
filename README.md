@@ -108,6 +108,7 @@ craft-runner completion install zsh --dir ~/.zsh/completions
 - `list_java_installations`
 - `debug_install_agent`
 - `debug_agent_status`
+- `debug_agent_api`
 - `debug_eval_js`
 - `debug_eval_js_file`
 
@@ -125,7 +126,7 @@ a plugin/mod loading mechanism, so they cannot load this agent directly.
 craftr debug install-agent test-paper
 craftr server restart test-paper
 craftr debug status test-paper
-craftr debug js test-paper --code "Bukkit.getOnlinePlayers().size()"
+craftr debug js test-paper --code "cr.platform.onlinePlayerNames()"
 ```
 
 The installer places the jar under `plugins/` for Bukkit-family loaders and
@@ -144,6 +145,29 @@ Mailbox path:
 
 Each server gets a unique token in `.craft-runner-agent/config.json`; the agent
 ignores requests with a mismatched token.
+
+Debug scripts should prefer the `cr` DSL over raw Java globals:
+
+- `cr.common` is cross-platform and contains Java reflection, construction,
+  collection, inspection, and raw server/plugin/logger access helpers.
+- `cr.platform` is platform-specific. Bukkit-family servers expose helpers for
+  players, worlds, plugins, commands, materials, item stacks, and Folia
+  detection. Fabric, Forge, and NeoForge currently expose generic platform
+  metadata plus raw server/plugin objects, so use `cr.common` reflection there.
+
+Useful examples:
+
+```js
+cr.common.platformName()
+cr.common.inspect(cr.common.server())
+cr.common.callStatic("org.bukkit.Bukkit", "getOnlinePlayers").size()
+cr.platform.capabilities()
+cr.platform.onlinePlayerNames()
+cr.platform.dispatchCommand("say hello from craft-runner")
+```
+
+MCP clients can call `debug_agent_api` to retrieve the current DSL reference
+before generating `debug_eval_js` code.
 
 ## Core Installation Cache
 

@@ -14,6 +14,10 @@ public interface AgentPlatform {
 
     Object serverObject();
 
+    default Object debugPlatformApi() {
+        return new PlatformDebugApi(this);
+    }
+
     default Future<Object> callMainThread(Callable<Object> task, ExecutorService fallbackExecutor) {
         Object server = serverObject();
         if (server != null) {

@@ -50,6 +50,11 @@ public final class CraftRunnerBukkitPlugin extends JavaPlugin implements AgentPl
     }
 
     @Override
+    public Object debugPlatformApi() {
+        return new BukkitDebugApi(this);
+    }
+
+    @Override
     public Future<Object> callMainThread(Callable<Object> task, ExecutorService fallbackExecutor) {
         Future<Object> foliaFuture = callFoliaGlobalScheduler(task);
         if (foliaFuture != null) {
