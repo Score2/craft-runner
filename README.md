@@ -3,7 +3,6 @@
 Local Minecraft server plugin testing platform exposed as an MCP server.
 
 This project is intended to be used through MCP. The CLI is only a debugging helper.
-It is not published to npm yet.
 
 ## Install Locally
 
@@ -108,6 +107,18 @@ To choose a specific completion directory:
 ```sh
 craft-runner completion install zsh --dir ~/.zsh/completions
 ```
+
+## Release Automation
+
+GitHub Actions runs regression tests on pushes and pull requests. npm publishing
+is intentionally gated: the publish workflow runs only when manually dispatched
+or when the pushed commit message contains `[npm publish]`.
+
+For npm Trusted Publishing, configure npm to trust:
+
+- repository: `Score2/craft-runner`
+- workflow: `.github/workflows/publish.yml`
+- branch: `master`
 
 ## Main MCP Tools
 

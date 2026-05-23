@@ -4,10 +4,14 @@
   "description": "Local Minecraft server plugin testing platform exposed as an MCP server.",
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Score2/craft-runner.git"
+  },
   "bin": {
-    "craft-runner-mcp": "./dist/bin/mcp.js",
-    "craft-runner": "./dist/bin/cli.js",
-    "craftr": "./dist/bin/cli.js"
+    "craft-runner-mcp": "dist/bin/mcp.js",
+    "craft-runner": "dist/bin/cli.js",
+    "craftr": "dist/bin/cli.js"
   },
   "files": [
     "agent/build.gradle.kts",
