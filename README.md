@@ -4,7 +4,27 @@ Local Minecraft server plugin testing platform exposed as an MCP server.
 
 This project is intended to be used through MCP. The CLI is only a debugging helper.
 
-## Install Locally
+## Install
+
+Install the published npm package globally:
+
+```sh
+npm install -g @score2/craft-runner
+```
+
+This installs three commands:
+
+- `craft-runner-mcp`: stdio MCP server
+- `craft-runner`: human-friendly CLI
+- `craftr`: shorter CLI alias
+
+Requirements:
+
+- Node.js 20+
+- Java matching the Minecraft version under test
+- Gradle only when rebuilding the bundled debug agent from source
+
+To work from a source checkout instead:
 
 ```sh
 npm install
@@ -14,13 +34,13 @@ npm install -g .
 
 ## MCP Command
 
-After local installation, MCP clients can start the stdio server with:
+After installation, MCP clients can start the stdio server with:
 
 ```sh
 craft-runner-mcp
 ```
 
-Example MCP config:
+Example MCP config for macOS/Linux:
 
 ```json
 {
@@ -45,6 +65,9 @@ On Windows, MCP clients that spawn commands without a shell should use the npm
   }
 }
 ```
+
+For Codex or Claude Code, use the same command shape in the MCP server config.
+No extra daemon or port is required; the MCP server communicates over stdio.
 
 ## CLI
 
@@ -76,7 +99,7 @@ The shorter alias `craftr` is also installed:
 
 ```sh
 craftr server list
-craftr server list
+craftr stats
 craftr core list
 ```
 
@@ -123,23 +146,38 @@ For npm Trusted Publishing, configure npm to trust:
 ## Main MCP Tools
 
 - `create_server`
+- `list_servers`
+- `get_server`
 - `get_stats`
 - `start_server`
 - `stop_server`
+- `restart_server`
 - `destroy_server`
 - `put_server_file`
+- `put_server_files`
 - `add_plugin`
+- `remove_server_file`
+- `list_server_files`
 - `tail_server_log`
 - `read_server_log`
+- `wait_server_ready`
+- `send_server_command`
+- `get_server_events`
+- `list_core_providers`
+- `search_cores`
 - `download_core`
+- `import_core`
+- `list_cores`
+- `remove_core`
+- `verify_core`
 - `list_java_installations`
+- `get_java_info`
+- `validate_java_for_core`
 - `debug_install_agent`
 - `debug_agent_status`
 - `debug_agent_api`
 - `debug_eval_js`
 - `debug_eval_js_file`
-
-Remote and Docker runners are intentionally not implemented yet.
 
 ## JS Debug Agent
 
@@ -159,6 +197,8 @@ craftr debug js test-paper --code "cr.platform.onlinePlayerNames()"
 The installer places the jar under `plugins/` for Bukkit-family loaders and
 under `mods/` for Fabric, Forge, and NeoForge. For `custom` loaders it writes
 both locations because the platform cannot be inferred from metadata alone.
+The agent jar is bundled in the npm package, so normal use does not require
+Gradle. `debug_install_agent` with `rebuild: true` requires Gradle on `PATH`.
 
 Mailbox path:
 
@@ -205,3 +245,18 @@ installation directory.
 
 Each test server keeps its own `plugins/`, config, worlds, and logs, while
 shareable core-bound directories are linked from the central core installation.
+
+## Runtime Directories
+
+By default, temporary test servers are placed under the system temp directory and
+may be cleaned by the OS. Cached server cores and shared core installation data
+are stored under the user cache directory to avoid repeated downloads.
+
+Useful environment variables:
+
+- `CRAFT_RUNNER_CACHE_DIR`: override the core/cache directory
+- `CRAFT_RUNNER_SERVER_BASE_DIR`: override where test servers are created
+- `CRAFT_RUNNER_STATE_DIR`: override metadata and lock storage
+- `CRAFT_RUNNER_JAVA_REF`: default Java reference, such as `system`, `home:/path`, or `path:/path/to/java`
+
+Remote and Docker runners are intentionally not implemented yet.
