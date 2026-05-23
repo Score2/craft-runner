@@ -1,0 +1,21 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
+
+test("agent jar preserves Graal multi-release metadata", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "craft-runner-agent-jar-"));
+  const jar = path.join(process.cwd(), "agent", "build", "libs", "craft-runner-agent-0.1.0.jar");
+
+  await execFileAsync("jar", ["xf", jar, "META-INF/MANIFEST.MF"], { cwd: root });
+  const manifest = await fs.readFile(path.join(root, "META-INF", "MANIFEST.MF"), "utf8");
+  assert.match(manifest, /^Multi-Release: true\r?$/m);
+
+  const listing = await execFileAsync("jar", ["tf", jar], { cwd: process.cwd(), maxBuffer: 20 * 1024 * 1024 });
+  assert.match(listing.stdout, /META-INF\/versions\/9\/com\/oracle\/truffle\/api\/impl\/CheckMultiReleaseSupport\.class/);
+});

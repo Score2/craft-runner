@@ -56,6 +56,7 @@ tasks.jar {
             .map { if (it.isDirectory) it else zipTree(it) }
     })
     manifest {
+        attributes["Multi-Release"] = "true"
         attributes["Implementation-Title"] = "Craft Runner Agent"
         attributes["Implementation-Version"] = project.version
     }

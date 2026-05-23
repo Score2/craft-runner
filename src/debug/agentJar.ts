@@ -23,9 +23,21 @@ async function runGradle(agentDir: string): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const child = spawn("gradle", ["-p", agentDir, "jar"], {
       cwd: path.dirname(agentDir),
-      stdio: ["ignore", "inherit", "inherit"]
+      stdio: ["ignore", "pipe", "pipe"]
     });
+    let output = "";
+    const collect = (chunk: Buffer): void => {
+      output = `${output}${chunk.toString("utf8")}`.slice(-20000);
+    };
+    child.stdout?.on("data", collect);
+    child.stderr?.on("data", collect);
     child.on("error", reject);
-    child.on("exit", (code) => code === 0 ? resolve() : reject(new Error(`gradle exited with code ${code}`)));
+    child.on("exit", (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`gradle exited with code ${code}${output ? `\n${output.trimEnd()}` : ""}`));
+      }
+    });
   });
 }
