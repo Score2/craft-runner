@@ -4,6 +4,7 @@ import { ServerManager } from "../server/manager.js";
 import { CORE_PROVIDERS, resolveCore, searchCores } from "../core/providers.js";
 import { getJavaInfo, listJavaInstallations, validateJavaForMinecraft } from "../java/discovery.js";
 import { getAgentJar } from "../debug/agentJar.js";
+import { RemoteBridge } from "../remote/bridge.js";
 import fs from "node:fs/promises";
 
 const CoreRefSchema = z.object({
@@ -32,8 +33,18 @@ export function createMcpServer(manager = new ServerManager()): McpServer {
   ): void => {
     server.registerTool(
       name,
-      { description, inputSchema: inputSchema as any },
-      async (args: any) => jsonResult(await handler(args)) as any
+      {
+        description: `${description} Optional remote_host routes this call over SSH to a compatible remote craftr bridge; if craftr is missing remotely, inspect/install it over SSH first.`,
+        inputSchema: { remote_host: z.string().optional(), ...inputSchema } as any
+      },
+      async (args: any) => {
+        if (args.remote_host) {
+          return jsonResult(await new RemoteBridge(args.remote_host).request(name, args)) as any;
+        }
+        const localArgs = { ...args };
+        delete localArgs.remote_host;
+        return jsonResult(await handler(localArgs)) as any;
+      }
     );
   };
 

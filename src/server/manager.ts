@@ -305,7 +305,7 @@ export class ServerManager {
     return { id, deleted_files: false };
   }
 
-  async putFile(id: string, targetPath: string, options: { content?: string; source_path?: string; overwrite?: boolean }): Promise<{ target: string; bytes: number }> {
+  async putFile(id: string, targetPath: string, options: { content?: string | Buffer; source_path?: string; overwrite?: boolean }): Promise<{ target: string; bytes: number }> {
     const server = await this.get(id);
     const target = resolveInside(server.server_dir, targetPath);
     if (!options.overwrite && await pathExists(target)) {

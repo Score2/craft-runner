@@ -7,6 +7,7 @@ import { ServerManager } from "../server/manager.js";
 import { getJavaInfo, listJavaInstallations, validateJavaForMinecraft } from "../java/discovery.js";
 import { CORE_PROVIDERS, resolveCore, searchCores } from "../core/providers.js";
 import { getAgentJar } from "../debug/agentJar.js";
+import { bridgeVersion, handleBridgeRequest } from "../bridge/protocol.js";
 
 const manager = new ServerManager();
 const rawArgs = process.argv.slice(2);
@@ -15,6 +16,10 @@ const cliArgs = rawArgs.filter((arg) => arg !== "--json");
 const [domain, action, ...rest] = cliArgs;
 
 try {
+  if (domain === "bridge") {
+    console.log(await runBridge(action));
+    process.exit(0);
+  }
   const result = await run(domain, action, rest);
   if (result !== undefined) {
     if (jsonOutput && typeof result !== "string") {
@@ -26,6 +31,20 @@ try {
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;
+}
+
+async function runBridge(action: string | undefined): Promise<string> {
+  if (action === "version") {
+    return `${JSON.stringify(bridgeVersion())}`;
+  }
+  if (action === "request") {
+    const chunks: Buffer[] = [];
+    for await (const chunk of process.stdin) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    return `${JSON.stringify(await handleBridgeRequest(Buffer.concat(chunks).toString("utf8"), manager))}`;
+  }
+  throw new Error("Usage: craftr bridge version | craftr bridge request");
 }
 
 async function run(domain: string | undefined, action: string | undefined, args: string[]): Promise<unknown> {
