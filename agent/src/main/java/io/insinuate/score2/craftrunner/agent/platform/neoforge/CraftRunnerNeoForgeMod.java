@@ -1,10 +1,12 @@
 package io.insinuate.score2.craftrunner.agent.platform.neoforge;
 
-import io.insinuate.score2.craftrunner.agent.common.AgentPlatform;
-import io.insinuate.score2.craftrunner.agent.common.AgentRuntime;
+import io.insinuate.score2.craftrunner.agent.common.runtime.AgentPlatform;
+import io.insinuate.score2.craftrunner.agent.common.runtime.AgentRuntime;
+import io.insinuate.score2.craftrunner.agent.common.command.BrigadierAgentCommand;
 import java.util.logging.Logger;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 
@@ -15,8 +17,13 @@ public final class CraftRunnerNeoForgeMod implements AgentPlatform {
     private Object server;
 
     public CraftRunnerNeoForgeMod() {
+        NeoForge.EVENT_BUS.addListener(RegisterCommandsEvent.class, this::onRegisterCommands);
         NeoForge.EVENT_BUS.addListener(this::onServerStarted);
         NeoForge.EVENT_BUS.addListener(this::onServerStopping);
+    }
+
+    private void onRegisterCommands(RegisterCommandsEvent event) {
+        BrigadierAgentCommand.register(dispatcherFrom(event), this, () -> runtime);
     }
 
     private void onServerStarted(ServerStartedEvent event) {
@@ -59,6 +66,14 @@ public final class CraftRunnerNeoForgeMod implements AgentPlatform {
         } catch (ReflectiveOperationException error) {
             logger.warning("Could not resolve NeoForge server instance: " + error);
             return null;
+        }
+    }
+
+    private Object dispatcherFrom(Object event) {
+        try {
+            return event.getClass().getMethod("getDispatcher").invoke(event);
+        } catch (ReflectiveOperationException error) {
+            throw new IllegalStateException("Could not resolve NeoForge command dispatcher", error);
         }
     }
 }

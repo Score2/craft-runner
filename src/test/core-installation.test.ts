@@ -35,10 +35,12 @@ test("core installation prepares direct jars and materializes shareable dirs", a
 
 function testConfig(root: string): CraftRunnerConfig {
   return {
+    root_dir: path.join(root, "home"),
     cache_dir: path.join(root, "cache"),
+    agents_dir: path.join(root, "home", "agents"),
     server_base_dir: path.join(root, "servers"),
     state_dir: path.join(root, "state"),
-    user_agent: "craft-runner-test/0.1.0",
+    user_agent: "craft-runner-test/1.0.0",
     ports: {
       minecraft_start: 41000,
       minecraft_end: 41020,

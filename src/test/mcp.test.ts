@@ -20,18 +20,26 @@ test("MCP server exposes craft-runner tools over stdio", async () => {
     const names = new Set(tools.tools.map((tool) => tool.name));
     assert.equal(names.has("create_server"), true);
     assert.equal(names.has("get_stats"), true);
+    assert.equal(names.has("kill_server"), true);
     assert.equal(names.has("download_core"), true);
     assert.equal(names.has("read_server_log"), true);
     assert.equal(names.has("list_java_installations"), true);
     assert.equal(names.has("debug_install_agent"), true);
+    assert.equal(names.has("debug_discover_agents"), true);
+    assert.equal(names.has("debug_register_discovered_agent"), true);
     assert.equal(names.has("debug_agent_api"), true);
     assert.equal(names.has("debug_eval_js"), true);
+    assert.equal(names.has("hot_plugin_capabilities"), true);
+    assert.equal(names.has("hot_load_plugin"), true);
+    assert.equal(names.has("hot_unload_plugin"), true);
+    assert.equal(names.has("hot_reload_plugin"), true);
 
     const docs = await client.callTool({ name: "debug_agent_api", arguments: {} });
     const content = docs.content as Array<{ type: string; text?: string }>;
     const text = content.find((item) => item.type === "text")?.text ?? "";
     assert.match(text, /cr\.common/);
     assert.match(text, /cr\.platform/);
+    assert.match(text, /hot_load_plugin/);
 
     const stats = await client.callTool({ name: "get_stats", arguments: {} });
     const statsContent = stats.content as Array<{ type: string; text?: string }>;
@@ -53,6 +61,7 @@ test("MCP debug agent rebuild does not corrupt stdio transport", async () => {
     cwd: process.cwd(),
     env: compactEnv({
       ...process.env,
+      CRAFT_RUNNER_HOME: path.join(root, "home"),
       CRAFT_RUNNER_CACHE_DIR: path.join(root, "cache"),
       CRAFT_RUNNER_SERVER_BASE_DIR: path.join(root, "servers"),
       CRAFT_RUNNER_STATE_DIR: path.join(root, "state")

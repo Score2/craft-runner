@@ -1,4 +1,4 @@
-name: Publish npm package
+name: Publish npm package and release
 
 on:
   push:
@@ -7,12 +7,12 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   id-token: write
 
 jobs:
   publish:
-    name: Publish to npm
+    name: Publish to npm and GitHub Releases
     runs-on: ubuntu-latest
     if: >-
       github.event_name == 'workflow_dispatch' ||
@@ -45,5 +45,32 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: Read package metadata
+        id: package
+        shell: bash
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${version}" >> "$GITHUB_OUTPUT"
+          echo "agent_jar=agent/build/libs/craft-runner-agent-${version}.jar" >> "$GITHUB_OUTPUT"
+
       - name: Publish
         run: npm publish --access public
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.package.outputs.tag }}
+          VERSION: ${{ steps.package.outputs.version }}
+          AGENT_JAR: ${{ steps.package.outputs.agent_jar }}
+        shell: bash
+        run: |
+          test -f "$AGENT_JAR"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$AGENT_JAR#craft-runner-agent-${VERSION}.jar" --clobber
+          else
+            gh release create "$TAG" "$AGENT_JAR#craft-runner-agent-${VERSION}.jar" \
+              --target "$GITHUB_SHA" \
+              --title "craft-runner ${VERSION}" \
+              --notes "Published npm package @score2/craft-runner@${VERSION}. Agent jar is attached for manual server installation."
+          fi

@@ -6,6 +6,8 @@ export type ServerStatus =
   | "stopped"
   | "failed";
 
+export type ServerLaunchBackend = "tmux" | "background";
+
 export type CoreKind = "jar" | "installer";
 
 export type CoreRef = {
@@ -71,10 +73,12 @@ export type JavaInfo = {
 
 export type ServerMetadata = {
   id: string;
-  kind: "local";
+  kind: "local" | "external";
   server_dir: string;
   base_dir: string;
   persistent: boolean;
+  managed?: boolean;
+  deletable?: boolean;
   core_ref: CoreRef;
   core_id: string;
   minecraft_version: string;
@@ -91,9 +95,14 @@ export type ServerMetadata = {
     xmx: string;
   };
   pid?: number;
+  launch_backend?: ServerLaunchBackend;
+  tmux_session?: string;
+  console_stdin_path?: string;
   debug_agent?: {
     token: string;
     mailbox_dir: string;
+    socket_path?: string;
+    endpoint_name?: string;
     agent_jar: string;
     agent_jars?: string[];
     installed_at: string;
@@ -108,6 +117,15 @@ export type DebugEvalInput = {
   server_id: string;
   code: string;
   thread?: "main" | "async";
+  timeout_ms?: number;
+};
+
+export type HotPluginInput = {
+  server_id: string;
+  action: "capabilities" | "list" | "load" | "unload" | "reload";
+  path?: string;
+  plugin_name?: string;
+  enable?: boolean;
   timeout_ms?: number;
 };
 
@@ -142,7 +160,9 @@ export type CreateServerInput = {
 };
 
 export type CraftRunnerConfig = {
+  root_dir: string;
   cache_dir: string;
+  agents_dir: string;
   server_base_dir: string;
   state_dir: string;
   user_agent: string;

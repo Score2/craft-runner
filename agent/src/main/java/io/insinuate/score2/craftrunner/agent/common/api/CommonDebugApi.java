@@ -1,5 +1,7 @@
-package io.insinuate.score2.craftrunner.agent.common;
+package io.insinuate.score2.craftrunner.agent.common.api;
 
+import io.insinuate.score2.craftrunner.agent.common.reflect.ReflectiveAccess;
+import io.insinuate.score2.craftrunner.agent.common.runtime.AgentPlatform;
 import java.lang.reflect.Array;
 import java.util.ArrayList;
 import java.util.Arrays;

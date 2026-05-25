@@ -1,5 +1,10 @@
-package io.insinuate.score2.craftrunner.agent.common;
+package io.insinuate.score2.craftrunner.agent.common.mailbox;
 
+import lombok.Value;
+import lombok.experimental.Accessors;
+
+@Value
+@Accessors(fluent = true)
 final class DebugResponse {
     String id;
     boolean ok;
@@ -9,31 +14,15 @@ final class DebugResponse {
     long durationMs;
 
     static DebugResponse success(String id, Object result, long durationMs) {
-        DebugResponse response = new DebugResponse();
-        response.id = id;
-        response.ok = true;
-        response.result = result;
-        response.durationMs = durationMs;
-        return response;
+        return new DebugResponse(id, true, result, null, null, durationMs);
     }
 
     static DebugResponse failure(String id, Throwable error, long durationMs) {
-        DebugResponse response = new DebugResponse();
-        response.id = id;
-        response.ok = false;
-        response.error = error.toString();
-        response.stack = stackTrace(error);
-        response.durationMs = durationMs;
-        return response;
+        return new DebugResponse(id, false, null, error.toString(), stackTrace(error), durationMs);
     }
 
     static DebugResponse failure(String id, String error) {
-        DebugResponse response = new DebugResponse();
-        response.id = id;
-        response.ok = false;
-        response.error = error;
-        response.durationMs = 0L;
-        return response;
+        return new DebugResponse(id, false, null, error, null, 0L);
     }
 
     private static String stackTrace(Throwable error) {

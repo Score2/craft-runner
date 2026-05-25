@@ -1,6 +1,6 @@
 {
   "name": "@score2/craft-runner",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Local Minecraft server plugin testing platform exposed as an MCP server.",
   "type": "module",
   "license": "MIT",
@@ -19,12 +19,14 @@
     "agent/settings.gradle.kts",
     "agent/src",
     "dist/bin",
+    "dist/bridge",
     "dist/core",
     "dist/debug",
     "dist/server",
     "dist/java",
     "dist/lib",
     "dist/mcp",
+    "dist/remote",
     "dist/storage",
     "README.md",
     "LICENSE"
@@ -32,7 +34,7 @@
   "scripts": {
     "build": "npm run build:ts && npm run build:agent",
     "build:ts": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json && node -e \"const fs=require('fs'); for (const f of ['dist/bin/mcp.js','dist/bin/cli.js']) fs.chmodSync(f, 0o755)\"",
-    "build:agent": "gradle -p agent jar",
+    "build:agent": "node -e \"require('fs').rmSync('agent/build/libs',{recursive:true,force:true})\" && gradle -p agent jar",
     "prepare": "npm run build",
     "test": "npm run build && node --test dist/test/**/*.test.js",
     "lint": "tsc -p tsconfig.json --noEmit",

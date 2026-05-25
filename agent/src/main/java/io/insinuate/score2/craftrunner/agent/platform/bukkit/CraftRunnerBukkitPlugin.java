@@ -1,7 +1,11 @@
 package io.insinuate.score2.craftrunner.agent.platform.bukkit;
 
-import io.insinuate.score2.craftrunner.agent.common.AgentPlatform;
-import io.insinuate.score2.craftrunner.agent.common.AgentRuntime;
+import io.insinuate.score2.craftrunner.agent.common.runtime.AgentPlatform;
+import io.insinuate.score2.craftrunner.agent.common.runtime.AgentRuntime;
+import io.insinuate.score2.craftrunner.agent.common.hot.HotPluginOperations;
+import io.insinuate.score2.craftrunner.agent.platform.bukkit.api.BukkitDebugApi;
+import io.insinuate.score2.craftrunner.agent.platform.bukkit.command.CloudBukkitAgentCommand;
+import io.insinuate.score2.craftrunner.agent.platform.bukkit.hot.BukkitHotPluginOperations;
 import java.lang.reflect.Method;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
@@ -15,11 +19,18 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 public final class CraftRunnerBukkitPlugin extends JavaPlugin implements AgentPlatform {
     private AgentRuntime runtime;
+    private BukkitHotPluginOperations hotPluginOperations;
 
     @Override
     public void onEnable() {
+        hotPluginOperations = new BukkitHotPluginOperations(this);
         runtime = new AgentRuntime(this);
         runtime.enable();
+        try {
+            CloudBukkitAgentCommand.register(this, this, runtime);
+        } catch (Exception error) {
+            getLogger().warning("Failed to register Craft Runner agent command: " + error);
+        }
     }
 
     @Override
@@ -50,8 +61,21 @@ public final class CraftRunnerBukkitPlugin extends JavaPlugin implements AgentPl
     }
 
     @Override
+    public int serverPort() {
+        return getServer().getPort();
+    }
+
+    @Override
     public Object debugPlatformApi() {
         return new BukkitDebugApi(this);
+    }
+
+    @Override
+    public HotPluginOperations hotPluginOperations() {
+        if (hotPluginOperations == null) {
+            hotPluginOperations = new BukkitHotPluginOperations(this);
+        }
+        return hotPluginOperations;
     }
 
     @Override

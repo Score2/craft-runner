@@ -1,8 +1,10 @@
 import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import crypto from "node:crypto";
+import net from "node:net";
+import { promisify } from "node:util";
 import { CoreCache } from "../core/cache.js";
 import { resolveCore } from "../core/providers.js";
 import { CoreInstallationManager } from "../core/installation.js";
@@ -12,6 +14,7 @@ import {
   CreateServerInput,
   CraftRunnerConfig,
   DebugEvalInput,
+  HotPluginInput,
   ServerEvent,
   ServerMetadata
 } from "../lib/types.js";
@@ -20,6 +23,13 @@ import { randomId } from "../lib/hash.js";
 import { getJavaInfo, resolveJavaCommand, validateJavaForMinecraft } from "../java/discovery.js";
 import { MetadataStore } from "../storage/metadata.js";
 import { sendRconCommand } from "./rcon.js";
+
+const execFileAsync = promisify(execFile);
+
+type LaunchCommand = {
+  command: string;
+  args: string[];
+};
 
 export class ServerManager {
   readonly config: CraftRunnerConfig;
@@ -37,6 +47,7 @@ export class ServerManager {
   async init(): Promise<void> {
     await this.store.init();
     await this.coreCache.init();
+    await ensureDir(this.config.agents_dir);
   }
 
   async create(input: CreateServerInput): Promise<ServerMetadata> {
@@ -75,6 +86,8 @@ export class ServerManager {
       server_dir: serverDir,
       base_dir: baseDir,
       persistent: input.persistent ?? Boolean(input.base_dir),
+      managed: true,
+      deletable: true,
       core_ref: input.core_ref,
       core_id: core.id,
       minecraft_version: core.minecraft_version,
@@ -126,6 +139,9 @@ export class ServerManager {
       loader: server.loader,
       minecraft_version: server.minecraft_version,
       pid: server.pid,
+      launch_backend: server.launch_backend,
+      tmux_session: server.tmux_session,
+      console_stdin_path: server.console_stdin_path,
       persistent: server.persistent,
       disk_bytes: await directorySize(path.join(server.base_dir, "servers", server.id))
     })));
@@ -139,8 +155,10 @@ export class ServerManager {
     return {
       generated_at: new Date().toISOString(),
       paths: {
+        root_dir: this.config.root_dir,
         cache_dir: this.config.cache_dir,
         core_cache_dir: this.coreCache.coresDir,
+        agents_dir: this.config.agents_dir,
         server_base_dir: this.config.server_base_dir,
         state_dir: this.config.state_dir
       },
@@ -182,7 +200,7 @@ export class ServerManager {
 
   async start(id: string): Promise<ServerMetadata> {
     const server = await this.get(id);
-    if (server.status === "running" && server.pid && isProcessAlive(server.pid)) {
+    if (server.status === "running" && await isServerProcessRunning(server)) {
       return server;
     }
     const core = await this.coreCache.get(server.core_id);
@@ -193,25 +211,12 @@ export class ServerManager {
     await ensureDir(server.server_dir);
     const materialized = await this.coreInstallation.materialize(core, server);
     const command = await buildLaunchCommand(server, materialized.launch);
-    const stdoutPath = this.stdoutLogPath(server);
-    await ensureDir(path.dirname(stdoutPath));
-    const outFd = fsSync.openSync(stdoutPath, "a");
-    const errFd = fsSync.openSync(stdoutPath, "a");
-    const child = spawn(command.command, command.args, {
-      cwd: server.server_dir,
-      detached: true,
-      stdio: ["ignore", outFd, errFd],
-      env: {
-        ...process.env,
-        JAVA: java.command,
-        CRAFT_RUNNER_SERVER_ID: server.id
-      }
-    });
-    child.unref();
-    fsSync.closeSync(outFd);
-    fsSync.closeSync(errFd);
+    const runtime = await startServerProcess(server, command, java.command, this.stdoutLogPath(server));
 
-    server.pid = child.pid;
+    server.pid = runtime.pid;
+    server.launch_backend = runtime.backend;
+    server.tmux_session = runtime.tmux_session;
+    server.console_stdin_path = runtime.console_stdin_path;
     server.status = "running";
     server.updated_at = new Date().toISOString();
     server.java_command = java.command;
@@ -220,7 +225,14 @@ export class ServerManager {
       install_dir: materialized.install_dir,
       links: materialized.links
     });
-    addEvent(server, "started", "Server started", { pid: child.pid, command: command.command, args: command.args });
+    addEvent(server, "started", "Server started", {
+      pid: runtime.pid,
+      launch_backend: runtime.backend,
+      tmux_session: runtime.tmux_session,
+      console_stdin_path: runtime.console_stdin_path,
+      command: command.command,
+      args: command.args
+    });
     await this.store.saveServer(server);
     return server;
   }
@@ -231,29 +243,50 @@ export class ServerManager {
     addEvent(server, "stopping", "Stopping server");
     await this.store.saveServer(server);
 
-    if (server.pid && isProcessAlive(server.pid)) {
-      try {
-        process.kill(server.pid, "SIGTERM");
-      } catch {
-        // Process exited.
-      }
-      const deadline = Date.now() + timeoutMs;
-      while (Date.now() < deadline && isProcessAlive(server.pid)) {
-        await sleep(250);
-      }
-      if (isProcessAlive(server.pid)) {
-        try {
-          process.kill(server.pid, "SIGKILL");
-        } catch {
-          // Process exited.
-        }
-      }
-    }
+    await stopServerProcess(server, timeoutMs);
 
     server.status = "stopped";
     server.pid = undefined;
     server.updated_at = new Date().toISOString();
     addEvent(server, "stopped", "Server stopped");
+    await this.store.saveServer(server);
+    return server;
+  }
+
+  async kill(id: string): Promise<ServerMetadata> {
+    const server = await this.get(id);
+    const pid = server.pid;
+    const tmuxRunning = await isTmuxServerRunning(server);
+    if (!tmuxRunning && (!pid || !isProcessAlive(pid))) {
+      server.status = "stopped";
+      server.pid = undefined;
+      server.updated_at = new Date().toISOString();
+      addEvent(server, "kill_skipped", "No running tracked process to kill");
+      await this.store.saveServer(server);
+      return server;
+    }
+
+    addEvent(server, "killing", "Force killing server process", {
+      pid,
+      launch_backend: server.launch_backend,
+      tmux_session: server.tmux_session
+    });
+    await this.store.saveServer(server);
+
+    await killServerProcess(server);
+
+    const stillRunning = await isServerProcessRunning(server);
+    server.status = stillRunning ? "failed" : "stopped";
+    if (server.status === "stopped") {
+      server.pid = undefined;
+    }
+    server.updated_at = new Date().toISOString();
+    addEvent(
+      server,
+      server.status === "stopped" ? "killed" : "kill_failed",
+      server.status === "stopped" ? "Server process was force killed" : "Server process still appears to be alive after forced kill",
+      { pid, launch_backend: server.launch_backend, tmux_session: server.tmux_session }
+    );
     await this.store.saveServer(server);
     return server;
   }
@@ -265,6 +298,9 @@ export class ServerManager {
 
   async destroy(id: string, deleteFiles = true): Promise<{ id: string; deleted_files: boolean }> {
     const server = await this.get(id);
+    if (server.kind === "external" || server.deletable === false) {
+      throw new Error(`server ${id} was discovered from a manually installed agent and cannot be destroyed by craft-runner`);
+    }
     if (server.status === "running" || server.status === "starting") {
       await this.stop(id);
     }
@@ -278,7 +314,7 @@ export class ServerManager {
     return { id, deleted_files: false };
   }
 
-  async putFile(id: string, targetPath: string, options: { content?: string; source_path?: string; overwrite?: boolean }): Promise<{ target: string; bytes: number }> {
+  async putFile(id: string, targetPath: string, options: { content?: string | Buffer; source_path?: string; overwrite?: boolean }): Promise<{ target: string; bytes: number }> {
     const server = await this.get(id);
     const target = resolveInside(server.server_dir, targetPath);
     if (!options.overwrite && await pathExists(target)) {
@@ -363,26 +399,122 @@ export class ServerManager {
     return (await this.get(id)).events;
   }
 
-  async sendCommand(id: string, command: string): Promise<{ response: string }> {
+  async sendCommand(id: string, command: string): Promise<{ response: string; transport: "rcon" | "console_stdin" }> {
     const server = await this.get(id);
-    if (!server.rcon_port || !server.rcon_password) {
-      throw new Error("RCON is not enabled for this server");
+    if (server.rcon_port && server.rcon_password) {
+      const response = await sendRconCommand({
+        host: server.host,
+        port: server.rcon_port,
+        password: server.rcon_password,
+        command
+      });
+      addEvent(server, "command_sent", `Sent command through RCON: ${command}`, { transport: "rcon" });
+      await this.store.saveServer(server);
+      return { response, transport: "rcon" };
     }
-    const response = await sendRconCommand({
-      host: server.host,
-      port: server.rcon_port,
-      password: server.rcon_password,
-      command
-    });
-    addEvent(server, "command_sent", `Sent command: ${command}`);
+    await writeConsoleCommand(server, command);
+    addEvent(server, "command_sent", `Sent command through managed console stdin: ${command}`, { transport: "console_stdin" });
     await this.store.saveServer(server);
-    return { response };
+    return { response: "", transport: "console_stdin" };
+  }
+
+  async discoverDebugAgents(): Promise<Array<Record<string, unknown>>> {
+    await this.init();
+    if (!(await pathExists(this.config.agents_dir))) {
+      return [];
+    }
+    const result: Array<Record<string, unknown>> = [];
+    for (const entry of await fs.readdir(this.config.agents_dir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+      const endpointDir = path.join(this.config.agents_dir, entry.name);
+      const endpoint = await readJson<Record<string, unknown> | undefined>(path.join(endpointDir, "endpoint.json"), undefined);
+      const config = await readJson<Record<string, unknown> | undefined>(path.join(endpointDir, "config.json"), undefined);
+      const token = typeof endpoint?.token === "string" ? endpoint.token : config?.token;
+      if (typeof token !== "string" || token === "") {
+        continue;
+      }
+      const socketPath = typeof endpoint?.socket === "string" ? endpoint.socket : (process.platform === "win32" ? undefined : path.join(endpointDir, "agent.sock"));
+      result.push({
+        id: `agent-${entry.name}`,
+        endpoint_name: entry.name,
+        endpoint: endpointDir,
+        mailbox_dir: endpointDir,
+        socket_path: socketPath,
+        socket_exists: socketPath ? await pathExists(socketPath) : false,
+        token,
+        platform: endpoint?.platform,
+        server_port: endpoint?.serverPort ? Number(endpoint.serverPort) : Number(entry.name),
+        server_dir: endpoint?.serverDir,
+        last_seen_at: endpoint?.lastSeenAt,
+        transports: endpoint?.transports ?? [
+          ...(socketPath ? [{ type: "unix-socket", path: socketPath }] : []),
+          { type: "file-mailbox", path: endpointDir }
+        ],
+        temporary: true,
+        deletable: false
+      });
+    }
+    return result.sort((a, b) => String(a.endpoint_name).localeCompare(String(b.endpoint_name)));
+  }
+
+  async registerDiscoveredAgent(endpointName: string, id?: string): Promise<ServerMetadata> {
+    const agents = await this.discoverDebugAgents();
+    const agent = agents.find((item) => item.endpoint_name === endpointName || item.id === endpointName);
+    if (!agent) {
+      throw new Error(`discovered agent not found: ${endpointName}`);
+    }
+    const serverId = id ?? String(agent.id);
+    validateServerId(serverId);
+    const now = new Date().toISOString();
+    const port = Number(agent.server_port);
+    const serverDir = typeof agent.server_dir === "string" ? agent.server_dir : String(agent.endpoint);
+    const server: ServerMetadata = {
+      id: serverId,
+      kind: "external",
+      server_dir: serverDir,
+      base_dir: this.config.root_dir,
+      persistent: false,
+      managed: false,
+      deletable: false,
+      core_ref: { loader: "external", minecraft_version: "unknown" },
+      core_id: "external",
+      minecraft_version: "unknown",
+      loader: typeof agent.platform === "string" ? agent.platform : "external",
+      host: "127.0.0.1",
+      port: Number.isFinite(port) ? port : 0,
+      java_args: [],
+      memory: { xms: "", xmx: "" },
+      status: "running",
+      created_at: now,
+      updated_at: now,
+      debug_agent: {
+        token: String(agent.token),
+        mailbox_dir: String(agent.mailbox_dir),
+        socket_path: typeof agent.socket_path === "string" ? agent.socket_path : undefined,
+        endpoint_name: String(agent.endpoint_name),
+        agent_jar: "",
+        agent_jars: [],
+        installed_at: now
+      },
+      events: []
+    };
+    addEvent(server, "debug_agent_discovered", "Registered manually installed Craft Runner agent", {
+      endpoint_name: agent.endpoint_name,
+      mailbox_dir: agent.mailbox_dir,
+      socket_path: agent.socket_path
+    });
+    await this.store.saveServer(server);
+    return server;
   }
 
   async installDebugAgent(id: string, agentJarPath: string): Promise<ServerMetadata> {
     const server = await this.get(id);
     const token = server.debug_agent?.token ?? randomId("debug");
-    const mailboxDir = path.join(server.server_dir, ".craft-runner-agent");
+    const endpointName = String(server.port);
+    const mailboxDir = this.agentEndpointDir(endpointName);
+    const socketPath = process.platform === "win32" ? undefined : path.join(mailboxDir, "agent.sock");
     await ensureDir(path.join(mailboxDir, "requests"));
     await ensureDir(path.join(mailboxDir, "responses"));
     await ensureDir(path.join(mailboxDir, "tmp"));
@@ -393,11 +525,14 @@ export class ServerManager {
     }
     await writeJson(path.join(mailboxDir, "config.json"), {
       token,
+      endpointName,
       pollIntervalMs: 250
     });
     server.debug_agent = {
       token,
       mailbox_dir: mailboxDir,
+      socket_path: socketPath,
+      endpoint_name: endpointName,
       agent_jar: targetJars[0],
       agent_jars: targetJars,
       installed_at: new Date().toISOString()
@@ -409,19 +544,26 @@ export class ServerManager {
 
   async debugAgentStatus(id: string): Promise<Record<string, unknown>> {
     const server = await this.get(id);
-    const mailboxDir = server.debug_agent?.mailbox_dir ?? path.join(server.server_dir, ".craft-runner-agent");
+    const endpointName = server.debug_agent?.endpoint_name ?? String(server.port);
+    const mailboxDir = server.debug_agent?.mailbox_dir ?? this.agentEndpointDir(endpointName);
+    const socketPath = server.debug_agent?.socket_path ?? (process.platform === "win32" ? undefined : path.join(mailboxDir, "agent.sock"));
     const agentJars = server.debug_agent?.agent_jars ?? (server.debug_agent?.agent_jar ? [server.debug_agent.agent_jar] : debugAgentTargets(server));
     return {
       server_id: server.id,
       configured: Boolean(server.debug_agent?.token),
+      endpoint_name: endpointName,
       mailbox_dir: mailboxDir,
+      socket_path: socketPath,
+      endpoint_file: path.join(mailboxDir, "endpoint.json"),
       mailbox_exists: await pathExists(mailboxDir),
+      socket_exists: socketPath ? await pathExists(socketPath) : false,
       agent_jar: agentJars[0],
       agent_jars: agentJars,
-      agent_jar_exists: await pathExists(agentJars[0]),
+      agent_jar_exists: agentJars[0] ? await pathExists(agentJars[0]) : false,
       agent_jars_existing: await existingPaths(agentJars),
       requests_dir_exists: await pathExists(path.join(mailboxDir, "requests")),
       responses_dir_exists: await pathExists(path.join(mailboxDir, "responses")),
+      endpoint_file_exists: await pathExists(path.join(mailboxDir, "endpoint.json")),
       installed_at: server.debug_agent?.installed_at
     };
   }
@@ -431,17 +573,66 @@ export class ServerManager {
     if (!server.debug_agent?.token) {
       throw new Error("debug agent is not installed for this server");
     }
+    return this.sendAgentRequest(server, {
+      language: "js",
+      thread: input.thread ?? "main",
+      timeoutMs: input.timeout_ms ?? 5000,
+      code: input.code
+    }, "debug_eval_js", "Executed JS through debug agent");
+  }
+
+  async hotPlugin(input: HotPluginInput): Promise<unknown> {
+    const server = await this.get(input.server_id);
+    if (!server.debug_agent?.token) {
+      throw new Error("debug agent is not installed for this server");
+    }
+    return this.sendAgentRequest(server, {
+      language: "hot_plugin",
+      thread: "main",
+      timeoutMs: input.timeout_ms ?? 10000,
+      action: input.action,
+      path: input.path,
+      pluginName: input.plugin_name,
+      enable: input.enable ?? true
+    }, "hot_plugin", `Hot plugin action: ${input.action}`);
+  }
+
+  private async sendAgentRequest(
+    server: ServerMetadata,
+    body: Record<string, unknown>,
+    eventType: string,
+    eventMessage: string
+  ): Promise<unknown> {
+    if (!server.debug_agent?.token) {
+      throw new Error("debug agent is not installed for this server");
+    }
     const mailboxDir = server.debug_agent.mailbox_dir;
     const requestId = randomId("req");
-    const timeoutMs = input.timeout_ms ?? 5000;
+    const timeoutMs = typeof body.timeoutMs === "number" ? body.timeoutMs : 5000;
     const request = {
       id: requestId,
       token: server.debug_agent.token,
-      language: "js",
-      thread: input.thread ?? "main",
-      timeoutMs,
-      code: input.code
+      ...body
     };
+
+    if (server.debug_agent.socket_path && await pathExists(server.debug_agent.socket_path)) {
+      try {
+        const response = await sendAgentSocketRequest(server.debug_agent.socket_path, request, timeoutMs);
+        addEvent(server, eventType, eventMessage, {
+          request_id: requestId,
+          ok: isRecord(response) ? response.ok : undefined,
+          transport: "unix-socket"
+        });
+        await this.store.saveServer(server);
+        return response;
+      } catch (error) {
+        addEvent(server, "agent_socket_failed", "Unix socket debug transport failed; falling back to file mailbox", {
+          request_id: requestId,
+          socket_path: server.debug_agent.socket_path,
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+    }
 
     await ensureDir(path.join(mailboxDir, "requests"));
     await ensureDir(path.join(mailboxDir, "responses"));
@@ -456,9 +647,10 @@ export class ServerManager {
     while (Date.now() <= deadline) {
       if (await pathExists(responseFile)) {
         const response = await readJson<Record<string, unknown>>(responseFile, {});
-        addEvent(server, "debug_eval_js", "Executed JS through debug agent", {
+        addEvent(server, eventType, eventMessage, {
           request_id: requestId,
-          ok: response.ok
+          ok: response.ok,
+          transport: "file-mailbox"
         });
         await this.store.saveServer(server);
         return response;
@@ -489,6 +681,10 @@ export class ServerManager {
     return path.join(server.base_dir, "servers", server.id, "logs", "craft-runner-stdout.log");
   }
 
+  private agentEndpointDir(endpointName: string): string {
+    return path.join(this.config.agents_dir, endpointName);
+  }
+
   private async resolveLogFile(server: ServerMetadata, file?: string): Promise<string> {
     if (file) {
       return resolveInside(server.server_dir, file);
@@ -499,11 +695,31 @@ export class ServerManager {
   }
 
   private async refreshStatus(server: ServerMetadata): Promise<ServerMetadata> {
-    if (server.pid && server.status === "running" && !isProcessAlive(server.pid)) {
+    if (!["running", "starting", "stopping"].includes(server.status)) {
+      return server;
+    }
+    if (server.kind === "external") {
+      const alive = Boolean(
+        (server.debug_agent?.socket_path && await pathExists(server.debug_agent.socket_path)) ||
+        (server.debug_agent?.mailbox_dir && await pathExists(path.join(server.debug_agent.mailbox_dir, "endpoint.json")))
+      );
+      if (!alive) {
+        server.status = "stopped";
+        server.updated_at = new Date().toISOString();
+        addEvent(server, "agent_endpoint_missing", "Discovered agent endpoint is no longer visible");
+        await this.store.saveServer(server);
+      }
+      return server;
+    }
+    const running = await isServerProcessRunning(server);
+    if (!running) {
       server.status = "stopped";
       server.pid = undefined;
       server.updated_at = new Date().toISOString();
-      addEvent(server, "process_exit_detected", "Tracked process is no longer running");
+      addEvent(server, "process_exit_detected", "Tracked server process/session is no longer running", {
+        launch_backend: server.launch_backend,
+        tmux_session: server.tmux_session
+      });
       await this.store.saveServer(server);
     }
     return server;
@@ -513,15 +729,263 @@ export class ServerManager {
 async function buildLaunchCommand(
   server: ServerMetadata,
   launch: { command: "java" | "sh" | "cmd"; args: string[] }
-): Promise<{ command: string; args: string[] }> {
+): Promise<LaunchCommand> {
   const java = await resolveJavaCommand(server.java_ref ?? "system");
   if (launch.command === "sh") {
-    return { command: "sh", args: launch.args };
+    return { command: "sh", args: ensureNoGui(launch.args) };
   }
   if (launch.command === "cmd") {
-    return { command: process.env.ComSpec ?? "cmd.exe", args: launch.args };
+    return { command: process.env.ComSpec ?? "cmd.exe", args: ensureNoGui(launch.args) };
   }
-  return { command: java, args: memoryArgs(server).concat(server.java_args, launch.args) };
+  return { command: java, args: ensureNoGui(memoryArgs(server).concat(server.java_args, launch.args)) };
+}
+
+async function startServerProcess(
+  server: ServerMetadata,
+  command: LaunchCommand,
+  javaCommand: string,
+  stdoutPath: string
+): Promise<{ backend: "tmux" | "background"; pid?: number; tmux_session?: string; console_stdin_path?: string }> {
+  await ensureDir(path.dirname(stdoutPath));
+  if (await tmuxAvailable()) {
+    try {
+      return await startInTmux(server, command, javaCommand, stdoutPath);
+    } catch (error) {
+      addEvent(server, "tmux_start_failed", "tmux start failed; falling back to detached background process", {
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+  return startInBackground(server, command, javaCommand, stdoutPath);
+}
+
+async function startInTmux(
+  server: ServerMetadata,
+  command: LaunchCommand,
+  javaCommand: string,
+  stdoutPath: string
+): Promise<{ backend: "tmux"; pid?: number; tmux_session: string; console_stdin_path: string }> {
+  const session = server.tmux_session ?? tmuxSessionName(server);
+  if (await tmuxSessionExists(session)) {
+    throw new Error(`tmux session already exists: ${session}`);
+  }
+  const consoleStdinPath = server.console_stdin_path ?? path.join(server.server_dir, ".craft-runner", "console.stdin");
+  await createNamedPipe(consoleStdinPath);
+  const shellCommand = [
+    `export JAVA=${shellQuote(javaCommand)}`,
+    `export CRAFT_RUNNER_SERVER_ID=${shellQuote(server.id)}`,
+    `while true; do cat ${shellQuote(consoleStdinPath)}; done | ${shellJoin([command.command, ...command.args])} >> ${shellQuote(stdoutPath)} 2>&1`
+  ].join("; ");
+  await execFileAsync("tmux", [
+    "new-session",
+    "-d",
+    "-s",
+    session,
+    "-c",
+    server.server_dir,
+    shellCommand
+  ], {
+    env: {
+      ...process.env,
+      JAVA: javaCommand,
+      CRAFT_RUNNER_SERVER_ID: server.id
+    },
+    timeout: 10000
+  });
+  return {
+    backend: "tmux",
+    pid: await tmuxPanePid(session),
+    tmux_session: session,
+    console_stdin_path: consoleStdinPath
+  };
+}
+
+function startInBackground(
+  server: ServerMetadata,
+  command: LaunchCommand,
+  javaCommand: string,
+  stdoutPath: string
+): { backend: "background"; pid?: number } {
+  const outFd = fsSync.openSync(stdoutPath, "a");
+  const errFd = fsSync.openSync(stdoutPath, "a");
+  try {
+    const child = spawn(command.command, command.args, {
+      cwd: server.server_dir,
+      detached: true,
+      stdio: ["ignore", outFd, errFd],
+      env: {
+        ...process.env,
+        JAVA: javaCommand,
+        CRAFT_RUNNER_SERVER_ID: server.id
+      }
+    });
+    child.unref();
+    return { backend: "background", pid: child.pid };
+  } finally {
+    fsSync.closeSync(outFd);
+    fsSync.closeSync(errFd);
+  }
+}
+
+async function stopServerProcess(server: ServerMetadata, timeoutMs: number): Promise<void> {
+  if (await isTmuxServerRunning(server)) {
+    try {
+      await writeConsoleCommand(server, "stop");
+    } catch {
+      // Session may already be gone or the console reader may have exited.
+    }
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline && await tmuxSessionExists(server.tmux_session!)) {
+      await sleep(250);
+    }
+    if (await tmuxSessionExists(server.tmux_session!)) {
+      await tmuxKillSession(server.tmux_session!);
+    }
+    return;
+  }
+  if (server.pid && isProcessAlive(server.pid)) {
+    try {
+      process.kill(server.pid, "SIGTERM");
+    } catch {
+      // Process exited.
+    }
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline && isProcessAlive(server.pid)) {
+      await sleep(250);
+    }
+    if (isProcessAlive(server.pid)) {
+      try {
+        process.kill(server.pid, "SIGKILL");
+      } catch {
+        // Process exited.
+      }
+    }
+  }
+}
+
+async function killServerProcess(server: ServerMetadata): Promise<void> {
+  if (await isTmuxServerRunning(server)) {
+    await tmuxKillSession(server.tmux_session!);
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline && await tmuxSessionExists(server.tmux_session!)) {
+      await sleep(100);
+    }
+    return;
+  }
+  if (server.pid && isProcessAlive(server.pid)) {
+    try {
+      process.kill(server.pid, "SIGKILL");
+    } catch {
+      // Process exited.
+    }
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline && isProcessAlive(server.pid)) {
+      await sleep(100);
+    }
+  }
+}
+
+async function isServerProcessRunning(server: ServerMetadata): Promise<boolean> {
+  if (await isTmuxServerRunning(server)) {
+    return true;
+  }
+  return Boolean(server.pid && isProcessAlive(server.pid));
+}
+
+async function isTmuxServerRunning(server: ServerMetadata): Promise<boolean> {
+  return Boolean(server.launch_backend === "tmux" && server.tmux_session && await tmuxSessionExists(server.tmux_session));
+}
+
+async function writeConsoleCommand(server: ServerMetadata, command: string): Promise<void> {
+  if (!server.console_stdin_path) {
+    throw new Error("server does not have a managed console stdin path; enable RCON or restart under tmux");
+  }
+  if (!(await isServerProcessRunning(server))) {
+    throw new Error("server is not running");
+  }
+  await execFileAsync(shellCommand(), [
+    "-c",
+    "printf '%s\\n' \"$1\" > \"$2\"",
+    "craft-runner-console",
+    command,
+    server.console_stdin_path
+  ], { timeout: 5000 });
+}
+
+async function createNamedPipe(file: string): Promise<void> {
+  await fs.rm(file, { force: true });
+  await ensureDir(path.dirname(file));
+  await execFileAsync(mkfifoCommand(), [file], { timeout: 3000 });
+}
+
+function mkfifoCommand(): string {
+  return fsSync.existsSync("/usr/bin/mkfifo") ? "/usr/bin/mkfifo" : "mkfifo";
+}
+
+function shellCommand(): string {
+  return fsSync.existsSync("/bin/sh") ? "/bin/sh" : "sh";
+}
+
+async function tmuxAvailable(): Promise<boolean> {
+  if (process.platform === "win32") {
+    return false;
+  }
+  try {
+    await execFileAsync("tmux", ["-V"], { timeout: 3000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function tmuxSessionExists(session: string): Promise<boolean> {
+  try {
+    await execFileAsync("tmux", ["has-session", "-t", session], { timeout: 3000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function tmuxPanePid(session: string): Promise<number | undefined> {
+  try {
+    const result = await execFileAsync("tmux", ["display-message", "-p", "-t", session, "#{pane_pid}"], { timeout: 3000 });
+    const pid = Number(result.stdout.trim());
+    return Number.isFinite(pid) && pid > 0 ? pid : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function tmuxKillSession(session: string): Promise<void> {
+  try {
+    await execFileAsync("tmux", ["kill-session", "-t", session], { timeout: 3000 });
+  } catch {
+    // Session already disappeared.
+  }
+}
+
+function tmuxSessionName(server: ServerMetadata): string {
+  const suffix = crypto.createHash("sha1").update(server.server_dir).digest("hex").slice(0, 10);
+  const id = server.id.replace(/[^A-Za-z0-9_]/g, "_").slice(0, 48);
+  return `craft_runner_${suffix}_${id}`;
+}
+
+function ensureNoGui(args: string[]): string[] {
+  return args.some((arg) => arg.toLowerCase() === "nogui" || arg.toLowerCase() === "-nogui")
+    ? args
+    : args.concat("nogui");
+}
+
+function shellJoin(args: string[]): string {
+  return args.map(shellQuote).join(" ");
+}
+
+function shellQuote(value: string): string {
+  if (value === "") {
+    return "''";
+  }
+  return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
 function memoryArgs(server: ServerMetadata): string[] {
@@ -530,7 +994,7 @@ function memoryArgs(server: ServerMetadata): string[] {
 
 function debugAgentTargets(server: ServerMetadata): string[] {
   const modLoaders = new Set(["fabric", "forge", "neoforge"]);
-  const pluginLoaders = new Set(["bukkit", "craftbukkit", "spigot", "paper", "purpur", "folia"]);
+  const pluginLoaders = new Set(["bukkit", "craftbukkit", "spigot", "paper", "purpur", "folia", "bungee", "bungeecord", "waterfall", "velocity"]);
   if (modLoaders.has(server.loader)) {
     return [path.join(server.server_dir, "mods", "craft-runner-agent.jar")];
   }
@@ -565,6 +1029,39 @@ function isProcessAlive(pid: number): boolean {
   } catch {
     return false;
   }
+}
+
+async function sendAgentSocketRequest(socketPath: string, request: Record<string, unknown>, timeoutMs: number): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    const socket = net.createConnection(socketPath);
+    const timer = setTimeout(() => {
+      socket.destroy();
+      reject(new Error(`debug agent socket response timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+    socket.on("connect", () => {
+      socket.end(`${JSON.stringify(request)}\n`);
+    });
+    socket.on("data", (chunk) => {
+      chunks.push(Buffer.from(chunk));
+    });
+    socket.on("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    socket.on("end", () => {
+      clearTimeout(timer);
+      try {
+        resolve(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+      } catch (error) {
+        reject(error);
+      }
+    });
+  });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 async function sleep(ms: number): Promise<void> {

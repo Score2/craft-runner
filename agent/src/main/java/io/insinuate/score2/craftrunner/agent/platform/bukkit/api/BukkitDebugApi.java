@@ -1,7 +1,7 @@
-package io.insinuate.score2.craftrunner.agent.platform.bukkit;
+package io.insinuate.score2.craftrunner.agent.platform.bukkit.api;
 
-import io.insinuate.score2.craftrunner.agent.common.AgentPlatform;
-import io.insinuate.score2.craftrunner.agent.common.PlatformDebugApi;
+import io.insinuate.score2.craftrunner.agent.common.runtime.AgentPlatform;
+import io.insinuate.score2.craftrunner.agent.common.api.PlatformDebugApi;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collection;

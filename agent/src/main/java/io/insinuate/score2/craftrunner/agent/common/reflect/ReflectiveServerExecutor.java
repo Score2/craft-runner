@@ -1,4 +1,4 @@
-package io.insinuate.score2.craftrunner.agent.common;
+package io.insinuate.score2.craftrunner.agent.common.reflect;
 
 import java.lang.reflect.Method;
 import java.util.concurrent.Callable;
@@ -6,11 +6,11 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 
-final class ReflectiveServerExecutor {
+public final class ReflectiveServerExecutor {
     private ReflectiveServerExecutor() {
     }
 
-    static Future<Object> call(Object server, Callable<Object> task, ExecutorService fallbackExecutor) {
+    public static Future<Object> call(Object server, Callable<Object> task, ExecutorService fallbackExecutor) {
         Future<Object> future = tryExecute(server, task);
         if (future != null) {
             return future;
