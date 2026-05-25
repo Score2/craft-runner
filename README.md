@@ -131,6 +131,16 @@ To choose a specific completion directory:
 craft-runner completion install zsh --dir ~/.zsh/completions
 ```
 
+If a server is stuck and a graceful stop cannot finish, use the force-kill
+fallback:
+
+```sh
+craftr server kill test-paper
+```
+
+This bypasses normal Minecraft and plugin shutdown. Prefer `craftr server stop`
+for routine shutdowns.
+
 ## Release Automation
 
 GitHub Actions runs regression tests on pushes and pull requests. npm publishing
@@ -151,6 +161,7 @@ For npm Trusted Publishing, configure npm to trust:
 - `get_stats`
 - `start_server`
 - `stop_server`
+- `kill_server`
 - `restart_server`
 - `destroy_server`
 - `put_server_file`
@@ -178,25 +189,37 @@ For npm Trusted Publishing, configure npm to trust:
 - `debug_agent_api`
 - `debug_eval_js`
 - `debug_eval_js_file`
+- `hot_plugin_capabilities`
+- `hot_list_plugins`
+- `hot_load_plugin`
+- `hot_unload_plugin`
+- `hot_reload_plugin`
 
 ## JS Debug Agent
 
 For plugin/mod capable servers, craft-runner can install a local debug agent.
 The agent uses GraalJS and communicates through files in the server directory,
 without opening another port. The same agent jar contains entrypoints for
-Bukkit-family servers, Fabric, Forge, and NeoForge. Vanilla servers do not have
-a plugin/mod loading mechanism, so they cannot load this agent directly.
+Bukkit-family servers, BungeeCord/Waterfall, Velocity, Fabric, Forge, and
+NeoForge. Vanilla servers do not have a plugin/mod loading mechanism, so they
+cannot load this agent directly.
 
 ```sh
 craftr debug install-agent test-paper
 craftr server restart test-paper
 craftr debug status test-paper
+craftr debug connect-agent test-paper <connect-code-from-craftragent>
 craftr debug js test-paper --code "cr.platform.onlinePlayerNames()"
+craftr debug hot-capabilities test-paper
+craftr debug hot-load test-paper ./build/libs/MyPlugin.jar
+craftr debug hot-reload test-paper MyPlugin ./build/libs/MyPlugin.jar
+craftr debug hot-unload test-paper MyPlugin
 ```
 
-The installer places the jar under `plugins/` for Bukkit-family loaders and
-under `mods/` for Fabric, Forge, and NeoForge. For `custom` loaders it writes
-both locations because the platform cannot be inferred from metadata alone.
+The installer places the jar under `plugins/` for Bukkit-family and proxy
+loaders, and under `mods/` for Fabric, Forge, and NeoForge. For `custom`
+loaders it writes both locations because the platform cannot be inferred from
+metadata alone.
 The agent jar is bundled in the npm package, so normal use does not require
 Gradle. `debug_install_agent` with `rebuild: true` requires Gradle on `PATH`.
 
@@ -204,14 +227,36 @@ Mailbox path:
 
 ```text
 <server_dir>/.craft-runner-agent/
-  config.json
-  requests/
-  responses/
-  tmp/
+  <server-port>/
+    config.json
+    endpoint.json
+    requests/
+    responses/
+    tmp/
+  current.json
 ```
 
-Each server gets a unique token in `.craft-runner-agent/config.json`; the agent
-ignores requests with a mismatched token.
+The endpoint directory is named after the Minecraft server port so MCP, local
+tools, and future remote runners can identify a manually installed agent without
+craft-runner metadata. Each endpoint gets a unique token in `config.json`; the
+agent ignores requests with a mismatched token. Legacy
+`.craft-runner-agent/config.json` endpoints are still accepted.
+
+Users may also install `craft-runner-agent.jar` manually. On Bukkit-family,
+BungeeCord/Waterfall, and Velocity servers, `/craftragent status` shows the
+endpoint, `/craftragent token` prints the local token, and `/craftragent connect`
+prints a URL-safe base64 JSON payload containing local host candidates, server
+port, endpoint path, and token. The command is registered through Incendo Cloud
+so the command behavior is shared across those platforms. `/cra` is available
+as the short in-server alias. `list`, `hot-load`, `hot-unload`, and `hot-reload`
+are available from the same command, but hot plugin operations currently only
+perform real load/unload work on Bukkit-family servers.
+
+To let MCP use a manually installed agent, register that connect code:
+
+```sh
+craftr debug connect-agent test-paper <connect-code>
+```
 
 Debug scripts should prefer the `cr` DSL over raw Java globals:
 
@@ -219,7 +264,8 @@ Debug scripts should prefer the `cr` DSL over raw Java globals:
   collection, inspection, and raw server/plugin/logger access helpers.
 - `cr.platform` is platform-specific. Bukkit-family servers expose helpers for
   players, worlds, plugins, commands, materials, item stacks, and Folia
-  detection. Fabric, Forge, and NeoForge currently expose generic platform
+  detection. BungeeCord/Waterfall and Velocity expose proxy player/server
+  helpers. Fabric, Forge, and NeoForge currently expose generic platform
   metadata plus raw server/plugin objects, so use `cr.common` reflection there.
 
 Useful examples:
@@ -235,6 +281,47 @@ cr.platform.dispatchCommand("say hello from craft-runner")
 
 MCP clients can call `debug_agent_api` to retrieve the current DSL reference
 before generating `debug_eval_js` code.
+
+## Bukkit Hot Plugin Debugging
+
+Bukkit-family servers can use the debug agent to load, unload, and reload plugin
+jars without restarting the server:
+
+```sh
+craftr debug hot-capabilities test-paper
+craftr debug hot-list test-paper
+craftr debug hot-load test-paper ./plugins/MyPlugin.jar
+craftr debug hot-reload test-paper MyPlugin ./plugins/MyPlugin.jar
+craftr debug hot-unload test-paper MyPlugin
+```
+
+Equivalent MCP tools are `hot_plugin_capabilities`, `hot_list_plugins`,
+`hot_load_plugin`, `hot_unload_plugin`, and `hot_reload_plugin`.
+
+Important notes:
+
+- Hot load/unload/reload is intended for quick debugging loops, fast iteration,
+  and small visual or text tuning. For ordinary plugin changes, prefer a normal
+  server restart unless the user explicitly asks to avoid one.
+- If hot reload/unload leads to strange behavior, stale state, missing commands,
+  classloader issues, scheduler issues, or dependency inconsistencies, try a
+  full server restart first unless the user has clearly requested no restart.
+- Bukkit-style `plugin.yml` jars are supported on Bukkit, Spigot, Paper, and
+  Folia.
+- Pure Paper `paper-plugin.yml` jars are supported on Paper/Folia through
+  reflective Paper internals. Paper's public runtime path intentionally rejects
+  Paper plugin providers, so this path is best-effort and may need updates when
+  Paper internals change.
+- On Paper 1.20.5+, plugin remapping is delegated to the running server.
+- On Folia, the plugin jar must satisfy Folia's own compatibility rules, such as
+  declaring `folia-supported: true` when required.
+- Unload/reload is best-effort. Plugin-owned static state, custom threads,
+  native resources, and third-party registries can still require a server
+  restart.
+- BungeeCord/Waterfall and Velocity currently report hot plugin operations as
+  unsupported. Velocity has no public unload API, and runtime loading cannot
+  safely replay initialization for only the newly loaded plugin without touching
+  existing plugins.
 
 ## Core Installation Cache
 

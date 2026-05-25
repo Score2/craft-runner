@@ -20,5 +20,15 @@ test("agent jar preserves Graal multi-release metadata", async () => {
   assert.match(listing.stdout, /META-INF\/versions\/9\/com\/oracle\/truffle\/api\/impl\/CheckMultiReleaseSupport\.class/);
   assert.match(listing.stdout, /io\/insinuate\/score2\/craftrunner\/agent\/common\/CraftRunnerDebugApi\.class/);
   assert.match(listing.stdout, /io\/insinuate\/score2\/craftrunner\/agent\/common\/CommonDebugApi\.class/);
+  assert.match(listing.stdout, /io\/insinuate\/score2\/craftrunner\/agent\/common\/AgentCommandController\.class/);
+  assert.match(listing.stdout, /io\/insinuate\/score2\/craftrunner\/agent\/common\/hot\/HotPluginExecutor\.class/);
   assert.match(listing.stdout, /io\/insinuate\/score2\/craftrunner\/agent\/platform\/bukkit\/BukkitDebugApi\.class/);
+  assert.match(listing.stdout, /io\/insinuate\/score2\/craftrunner\/agent\/platform\/bukkit\/hot\/BukkitHotPluginOperations\.class/);
+  assert.match(listing.stdout, /io\/insinuate\/score2\/craftrunner\/agent\/platform\/bungee\/hot\/BungeeHotPluginOperations\.class/);
+  assert.match(listing.stdout, /io\/insinuate\/score2\/craftrunner\/agent\/platform\/velocity\/hot\/VelocityHotPluginOperations\.class/);
+  assert.match(listing.stdout, /io\/insinuate\/score2\/craftrunner\/agent\/platform\/bungee\/CraftRunnerBungeePlugin\.class/);
+  assert.match(listing.stdout, /io\/insinuate\/score2\/craftrunner\/agent\/platform\/velocity\/CraftRunnerVelocityPlugin\.class/);
+  assert.match(listing.stdout, /org\/incendo\/cloud\/CommandManager\.class/);
+  assert.match(listing.stdout, /bungee\.yml/);
+  assert.match(listing.stdout, /velocity-plugin\.json/);
 });

@@ -2,6 +2,7 @@ package io.insinuate.score2.craftrunner.agent.common;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import io.insinuate.score2.craftrunner.agent.common.hot.HotPluginExecutor;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -26,6 +27,7 @@ final class FileMailbox implements Runnable {
     private final Path tmp;
     private final ExecutorService asyncExecutor;
     private final JsDebugExecutor executor;
+    private final HotPluginExecutor hotPluginExecutor;
     private final Gson gson = new GsonBuilder().disableHtmlEscaping().create();
     private final Set<String> seen = new HashSet<>();
 
@@ -38,6 +40,7 @@ final class FileMailbox implements Runnable {
         this.tmp = root.resolve("tmp");
         this.asyncExecutor = asyncExecutor;
         this.executor = new JsDebugExecutor(platform);
+        this.hotPluginExecutor = new HotPluginExecutor(platform);
     }
 
     void ensureDirectories() throws IOException {
@@ -89,7 +92,7 @@ final class FileMailbox implements Runnable {
             writeResponse(DebugResponse.failure(request.id, "invalid token"));
             return;
         }
-        if (!"js".equalsIgnoreCase(request.language)) {
+        if (!"js".equalsIgnoreCase(request.language) && !"hot_plugin".equalsIgnoreCase(request.language)) {
             writeResponse(DebugResponse.failure(request.id, "unsupported language: " + request.language));
             return;
         }
@@ -101,9 +104,9 @@ final class FileMailbox implements Runnable {
         Future<Object> future = null;
         try {
             if ("async".equalsIgnoreCase(request.thread)) {
-                future = asyncExecutor.submit(() -> executor.execute(request.code));
+                future = asyncExecutor.submit(() -> executeRequest(request));
             } else {
-                future = platform.callMainThread(() -> executor.execute(request.code), asyncExecutor);
+                future = platform.callMainThread(() -> executeRequest(request), asyncExecutor);
             }
             Object result = future.get(timeoutMs(request), TimeUnit.MILLISECONDS);
             return DebugResponse.success(request.id, result, elapsedMs(started));
@@ -120,6 +123,13 @@ final class FileMailbox implements Runnable {
         } catch (Exception error) {
             return DebugResponse.failure(request.id, error, elapsedMs(started));
         }
+    }
+
+    private Object executeRequest(DebugRequest request) {
+        if ("hot_plugin".equalsIgnoreCase(request.language)) {
+            return hotPluginExecutor.execute(request);
+        }
+        return executor.execute(request.code);
     }
 
     private void writeResponse(DebugResponse response) {

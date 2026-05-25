@@ -18,6 +18,8 @@ test("CLI help prints real newlines", async () => {
   assert.match(result.stdout, /craft-runner core remove <id>/);
   assert.match(result.stdout, /craft-runner server create --id <id>/);
   assert.match(result.stdout, /craft-runner server logs <id>/);
+  assert.match(result.stdout, /craft-runner server kill <id>/);
+  assert.match(result.stdout, /craft-runner debug connect-agent <server-id> <connect-code>/);
   assert.equal(result.stdout.includes("craft-runner env"), false);
   assert.equal(result.stdout.includes("\\n"), false);
 });
@@ -29,8 +31,11 @@ test("CLI prints zsh completion script", async () => {
   assert.match(result.stdout, /\$words\[1\] server list --ids/);
   assert.match(result.stdout, /'remove:remove a cached core'/);
   assert.match(result.stdout, /'logs:read server logs'/);
+  assert.match(result.stdout, /'kill:force-kill a hung server process'/);
   assert.match(result.stdout, /'server:manage local Minecraft test servers'/);
   assert.match(result.stdout, /'stats:show current craft-runner statistics'/);
+  assert.match(result.stdout, /velocity/);
+  assert.match(result.stdout, /bungeecord/);
 });
 
 test("CLI exposes read-only core and java utility commands", async () => {

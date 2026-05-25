@@ -12,6 +12,7 @@ import {
   CreateServerInput,
   CraftRunnerConfig,
   DebugEvalInput,
+  HotPluginInput,
   ServerEvent,
   ServerMetadata
 } from "../lib/types.js";
@@ -258,6 +259,47 @@ export class ServerManager {
     return server;
   }
 
+  async kill(id: string): Promise<ServerMetadata> {
+    const server = await this.get(id);
+    const pid = server.pid;
+    if (!pid || !isProcessAlive(pid)) {
+      server.status = "stopped";
+      server.pid = undefined;
+      server.updated_at = new Date().toISOString();
+      addEvent(server, "kill_skipped", "No running tracked process to kill");
+      await this.store.saveServer(server);
+      return server;
+    }
+
+    addEvent(server, "killing", "Force killing server process", { pid });
+    await this.store.saveServer(server);
+
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      // Process exited.
+    }
+
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline && isProcessAlive(pid)) {
+      await sleep(100);
+    }
+
+    server.status = isProcessAlive(pid) ? "failed" : "stopped";
+    if (server.status === "stopped") {
+      server.pid = undefined;
+    }
+    server.updated_at = new Date().toISOString();
+    addEvent(
+      server,
+      server.status === "stopped" ? "killed" : "kill_failed",
+      server.status === "stopped" ? "Server process was force killed" : "Server process still appears to be alive after SIGKILL",
+      { pid }
+    );
+    await this.store.saveServer(server);
+    return server;
+  }
+
   async restart(id: string): Promise<ServerMetadata> {
     await this.stop(id);
     return this.start(id);
@@ -382,7 +424,8 @@ export class ServerManager {
   async installDebugAgent(id: string, agentJarPath: string): Promise<ServerMetadata> {
     const server = await this.get(id);
     const token = server.debug_agent?.token ?? randomId("debug");
-    const mailboxDir = path.join(server.server_dir, ".craft-runner-agent");
+    const endpointName = String(server.port);
+    const mailboxDir = path.join(server.server_dir, ".craft-runner-agent", endpointName);
     await ensureDir(path.join(mailboxDir, "requests"));
     await ensureDir(path.join(mailboxDir, "responses"));
     await ensureDir(path.join(mailboxDir, "tmp"));
@@ -393,11 +436,13 @@ export class ServerManager {
     }
     await writeJson(path.join(mailboxDir, "config.json"), {
       token,
+      endpointName,
       pollIntervalMs: 250
     });
     server.debug_agent = {
       token,
       mailbox_dir: mailboxDir,
+      endpoint_name: endpointName,
       agent_jar: targetJars[0],
       agent_jars: targetJars,
       installed_at: new Date().toISOString()
@@ -409,12 +454,15 @@ export class ServerManager {
 
   async debugAgentStatus(id: string): Promise<Record<string, unknown>> {
     const server = await this.get(id);
-    const mailboxDir = server.debug_agent?.mailbox_dir ?? path.join(server.server_dir, ".craft-runner-agent");
+    const endpointName = server.debug_agent?.endpoint_name ?? String(server.port);
+    const mailboxDir = server.debug_agent?.mailbox_dir ?? path.join(server.server_dir, ".craft-runner-agent", endpointName);
     const agentJars = server.debug_agent?.agent_jars ?? (server.debug_agent?.agent_jar ? [server.debug_agent.agent_jar] : debugAgentTargets(server));
     return {
       server_id: server.id,
       configured: Boolean(server.debug_agent?.token),
+      endpoint_name: endpointName,
       mailbox_dir: mailboxDir,
+      endpoint_file: path.join(mailboxDir, "endpoint.json"),
       mailbox_exists: await pathExists(mailboxDir),
       agent_jar: agentJars[0],
       agent_jars: agentJars,
@@ -422,8 +470,34 @@ export class ServerManager {
       agent_jars_existing: await existingPaths(agentJars),
       requests_dir_exists: await pathExists(path.join(mailboxDir, "requests")),
       responses_dir_exists: await pathExists(path.join(mailboxDir, "responses")),
+      endpoint_file_exists: await pathExists(path.join(mailboxDir, "endpoint.json")),
       installed_at: server.debug_agent?.installed_at
     };
+  }
+
+  async connectDebugAgent(id: string, connectCode: string): Promise<ServerMetadata> {
+    const server = await this.get(id);
+    const payload = decodeAgentConnectCode(connectCode);
+    const token = requiredString(payload.token, "token");
+    const mailboxDir = requiredString(payload.endpoint, "endpoint");
+    const endpointName = typeof payload.endpointName === "string"
+      ? payload.endpointName
+      : String(payload.serverPort ?? server.port);
+    const agentJars = debugAgentTargets(server);
+    server.debug_agent = {
+      token,
+      mailbox_dir: mailboxDir,
+      endpoint_name: endpointName,
+      agent_jar: agentJars[0],
+      agent_jars: agentJars,
+      installed_at: new Date().toISOString()
+    };
+    addEvent(server, "debug_agent_connected", "Connected to manually installed Craft Runner debug agent", {
+      mailbox_dir: mailboxDir,
+      endpoint_name: endpointName
+    });
+    await this.store.saveServer(server);
+    return server;
   }
 
   async debugEvalJs(input: DebugEvalInput): Promise<unknown> {
@@ -431,16 +505,46 @@ export class ServerManager {
     if (!server.debug_agent?.token) {
       throw new Error("debug agent is not installed for this server");
     }
+    return this.sendAgentRequest(server, {
+      language: "js",
+      thread: input.thread ?? "main",
+      timeoutMs: input.timeout_ms ?? 5000,
+      code: input.code
+    }, "debug_eval_js", "Executed JS through debug agent");
+  }
+
+  async hotPlugin(input: HotPluginInput): Promise<unknown> {
+    const server = await this.get(input.server_id);
+    if (!server.debug_agent?.token) {
+      throw new Error("debug agent is not installed for this server");
+    }
+    return this.sendAgentRequest(server, {
+      language: "hot_plugin",
+      thread: "main",
+      timeoutMs: input.timeout_ms ?? 10000,
+      action: input.action,
+      path: input.path,
+      pluginName: input.plugin_name,
+      enable: input.enable ?? true
+    }, "hot_plugin", `Hot plugin action: ${input.action}`);
+  }
+
+  private async sendAgentRequest(
+    server: ServerMetadata,
+    body: Record<string, unknown>,
+    eventType: string,
+    eventMessage: string
+  ): Promise<unknown> {
+    if (!server.debug_agent?.token) {
+      throw new Error("debug agent is not installed for this server");
+    }
     const mailboxDir = server.debug_agent.mailbox_dir;
     const requestId = randomId("req");
-    const timeoutMs = input.timeout_ms ?? 5000;
+    const timeoutMs = typeof body.timeoutMs === "number" ? body.timeoutMs : 5000;
     const request = {
       id: requestId,
       token: server.debug_agent.token,
-      language: "js",
-      thread: input.thread ?? "main",
-      timeoutMs,
-      code: input.code
+      ...body
     };
 
     await ensureDir(path.join(mailboxDir, "requests"));
@@ -456,7 +560,7 @@ export class ServerManager {
     while (Date.now() <= deadline) {
       if (await pathExists(responseFile)) {
         const response = await readJson<Record<string, unknown>>(responseFile, {});
-        addEvent(server, "debug_eval_js", "Executed JS through debug agent", {
+        addEvent(server, eventType, eventMessage, {
           request_id: requestId,
           ok: response.ok
         });
@@ -530,7 +634,7 @@ function memoryArgs(server: ServerMetadata): string[] {
 
 function debugAgentTargets(server: ServerMetadata): string[] {
   const modLoaders = new Set(["fabric", "forge", "neoforge"]);
-  const pluginLoaders = new Set(["bukkit", "craftbukkit", "spigot", "paper", "purpur", "folia"]);
+  const pluginLoaders = new Set(["bukkit", "craftbukkit", "spigot", "paper", "purpur", "folia", "bungee", "bungeecord", "waterfall", "velocity"]);
   if (modLoaders.has(server.loader)) {
     return [path.join(server.server_dir, "mods", "craft-runner-agent.jar")];
   }
@@ -565,6 +669,26 @@ function isProcessAlive(pid: number): boolean {
   } catch {
     return false;
   }
+}
+
+function decodeAgentConnectCode(connectCode: string): Record<string, any> {
+  try {
+    const padded = connectCode.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(connectCode.length / 4) * 4, "=");
+    const payload = JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
+    if (!payload || payload.schema !== "craft-runner-agent-connect") {
+      throw new Error("invalid schema");
+    }
+    return payload;
+  } catch (error) {
+    throw new Error(`invalid craft-runner agent connect code: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+function requiredString(value: unknown, name: string): string {
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new Error(`connect code is missing ${name}`);
+  }
+  return value;
 }
 
 async function sleep(ms: number): Promise<void> {

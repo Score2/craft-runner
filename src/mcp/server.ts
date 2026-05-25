@@ -74,6 +74,10 @@ export function createMcpServer(manager = new ServerManager()): McpServer {
     timeout_ms: z.number().int().optional()
   }, (args) => manager.stop(args.server_id, args.timeout_ms));
 
+  tool("kill_server", "Force-kill a tracked local server process with SIGKILL. This is an emergency fallback for hung servers, stop_server timeouts, or explicit user requests; do not use it as the default shutdown path because it bypasses graceful Minecraft/plugin shutdown.", {
+    server_id: z.string()
+  }, (args) => manager.kill(args.server_id));
+
   tool("restart_server", "Restart a local server.", {
     server_id: z.string()
   }, (args) => manager.restart(args.server_id));
@@ -207,6 +211,11 @@ export function createMcpServer(manager = new ServerManager()): McpServer {
     server_id: z.string()
   }, (args) => manager.debugAgentStatus(args.server_id));
 
+  tool("debug_connect_agent", "Register a manually installed Craft Runner agent from a /craftragent connect code so MCP tools can use its file mailbox endpoint.", {
+    server_id: z.string(),
+    connect_code: z.string()
+  }, (args) => manager.connectDebugAgent(args.server_id, args.connect_code));
+
   tool("debug_agent_api", "Describe the JavaScript DSL exposed by the debug agent. Agents should call this before writing non-trivial debug_eval_js scripts.", {
     server_id: z.string().optional()
   }, async (args) => {
@@ -235,6 +244,63 @@ export function createMcpServer(manager = new ServerManager()): McpServer {
     server_id: args.server_id,
     code: await fs.readFile(args.file, "utf8"),
     thread: args.thread,
+    timeout_ms: args.timeout_ms
+  }));
+
+  tool("hot_plugin_capabilities", "Inspect hot plugin lifecycle support for a server debug agent. Bukkit-family can load/unload; proxy platforms may report unsupported.", {
+    server_id: z.string(),
+    timeout_ms: z.number().int().optional()
+  }, (args) => manager.hotPlugin({
+    server_id: args.server_id,
+    action: "capabilities",
+    timeout_ms: args.timeout_ms
+  }));
+
+  tool("hot_list_plugins", "List plugins currently visible to the server debug agent.", {
+    server_id: z.string(),
+    timeout_ms: z.number().int().optional()
+  }, (args) => manager.hotPlugin({
+    server_id: args.server_id,
+    action: "list",
+    timeout_ms: args.timeout_ms
+  }));
+
+  tool("hot_load_plugin", "Runtime-load a Bukkit-family plugin jar through the debug agent. Supports plugin.yml everywhere and paper-plugin.yml on Paper/Folia through reflective Paper internals. Do not use by default unless the user wants hot debugging or no restart.", {
+    server_id: z.string(),
+    plugin_path: z.string(),
+    enable: z.boolean().optional(),
+    timeout_ms: z.number().int().optional()
+  }, (args) => manager.hotPlugin({
+    server_id: args.server_id,
+    action: "load",
+    path: args.plugin_path,
+    enable: args.enable,
+    timeout_ms: args.timeout_ms
+  }));
+
+  tool("hot_unload_plugin", "Best-effort runtime unload of a Bukkit-family plugin through the debug agent. Prefer normal stop/restart unless the user explicitly wants hot debugging.", {
+    server_id: z.string(),
+    plugin_name: z.string(),
+    timeout_ms: z.number().int().optional()
+  }, (args) => manager.hotPlugin({
+    server_id: args.server_id,
+    action: "unload",
+    plugin_name: args.plugin_name,
+    timeout_ms: args.timeout_ms
+  }));
+
+  tool("hot_reload_plugin", "Best-effort unload then runtime-load a Bukkit-family plugin jar through the debug agent. Prefer normal restart unless the user explicitly wants hot debugging.", {
+    server_id: z.string(),
+    plugin_name: z.string(),
+    plugin_path: z.string(),
+    enable: z.boolean().optional(),
+    timeout_ms: z.number().int().optional()
+  }, (args) => manager.hotPlugin({
+    server_id: args.server_id,
+    action: "reload",
+    plugin_name: args.plugin_name,
+    path: args.plugin_path,
+    enable: args.enable,
     timeout_ms: args.timeout_ms
   }));
 
@@ -287,6 +353,16 @@ function debugAgentApiDocs(loader?: string): Record<string, unknown> {
   return {
     namespace: "cr",
     rule: "Use cr.common for cross-platform Java/Minecraft reflection helpers. Use cr.platform only after checking platform capabilities because these methods depend on the loaded server platform.",
+    file_endpoint: {
+      layout: ".craft-runner-agent/<server-port>/",
+      protocol: "Write request JSON files into requests/ and read response JSON files from responses/. The endpoint name is the Minecraft server port so local and future remote runners can identify instances without relying on craft-runner metadata.",
+      notes: [
+        "MCP-managed servers record the endpoint in debug_agent_status.mailbox_dir.",
+        "Manually installed agents create the endpoint and config automatically; use /craftragent status, /craftragent token, or /craftragent connect in Bukkit-family, BungeeCord/Waterfall, and Velocity servers to inspect it.",
+        "/craftragent connect emits a URL-safe base64 JSON payload with host candidates, server port, endpoint path, and token for external tools.",
+        "A legacy .craft-runner-agent/config.json endpoint is still accepted for compatibility."
+      ]
+    },
     current_loader_hint: loader ?? null,
     common: {
       methods: commonMethods,
@@ -311,6 +387,21 @@ function debugAgentApiDocs(loader?: string): Record<string, unknown> {
       bukkit_family: {
         applies_to: ["bukkit", "spigot", "paper", "purpur", "folia"],
         methods: bukkitMethods,
+        hot_plugin_tools: [
+          "hot_plugin_capabilities(server_id)",
+          "hot_list_plugins(server_id)",
+          "hot_load_plugin(server_id, plugin_path, enable?)",
+          "hot_unload_plugin(server_id, plugin_name)",
+          "hot_reload_plugin(server_id, plugin_name, plugin_path, enable?)"
+        ],
+        hot_plugin_notes: [
+          "Hot plugin lifecycle is exposed as MCP tools, not as JS snippets.",
+          "Do not choose hot load/unload/reload by default. Prefer a normal server restart for plugin changes unless the user explicitly wants hot debugging, fast iteration, or quick visual/string tuning.",
+          "If hot reload/unload produces strange behavior, stale state, missing commands, classloader issues, scheduler issues, or dependency inconsistencies, first consider whether a full server restart is the correct fix. Respect explicit user instructions that they do not want a restart.",
+          "plugin.yml jars use the public Bukkit/Paper runtime path. paper-plugin.yml jars are supported on Paper/Folia through reflective Paper internals.",
+          "On Paper 1.20.5+ plugin remapping is delegated to the running server.",
+          "Unload/reload are best-effort and may leave plugin-owned static state, threads, native resources, or third-party registries behind."
+        ],
         examples: [
           "cr.platform.onlinePlayerNames()",
           "cr.platform.isFolia()",
@@ -320,6 +411,20 @@ function debugAgentApiDocs(loader?: string): Record<string, unknown> {
       },
       fabric_forge_neoforge: {
         status: "platform-specific shortcut methods are intentionally minimal for now; use cr.common reflection plus cr.platform.server() for loader-specific internals."
+      },
+      proxy_family: {
+        applies_to: ["bungee", "bungeecord", "waterfall", "velocity"],
+        command: "/craftragent is registered through Incendo Cloud where the platform supports commands.",
+        methods: [
+          "cr.platform.onlinePlayerNames()",
+          "cr.platform.serverNames()",
+          "cr.platform.onlineCount()"
+        ],
+        hot_plugin_notes: [
+          "BungeeCord/Waterfall and Velocity currently expose mailbox, JS eval, connect-code, and list/capability surfaces.",
+          "Hot load/unload on proxy platforms is reported as unsupported until a platform-specific lifecycle path can safely initialize and dispose plugin state.",
+          "Velocity has no public unload API, and runtime loading cannot safely replay ProxyInitializeEvent only for a newly loaded plugin without affecting existing plugins."
+        ]
       }
     },
     legacy_globals: {

@@ -94,6 +94,7 @@ export type ServerMetadata = {
   debug_agent?: {
     token: string;
     mailbox_dir: string;
+    endpoint_name?: string;
     agent_jar: string;
     agent_jars?: string[];
     installed_at: string;
@@ -108,6 +109,15 @@ export type DebugEvalInput = {
   server_id: string;
   code: string;
   thread?: "main" | "async";
+  timeout_ms?: number;
+};
+
+export type HotPluginInput = {
+  server_id: string;
+  action: "capabilities" | "list" | "load" | "unload" | "reload";
+  path?: string;
+  plugin_name?: string;
+  enable?: boolean;
   timeout_ms?: number;
 };
 

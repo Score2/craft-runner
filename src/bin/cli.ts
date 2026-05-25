@@ -36,6 +36,9 @@ async function run(domain: string | undefined, action: string | undefined, args:
   if (domain === "debug" && action === "install-agent") {
     return manager.installDebugAgent(required(args[0], "server id"), await getAgentJar({ rebuild: args.includes("--rebuild") }));
   }
+  if (domain === "debug" && action === "connect-agent") {
+    return manager.connectDebugAgent(required(args[0], "server id"), required(args[1], "connect code"));
+  }
   if (domain === "debug" && action === "status") return manager.debugAgentStatus(required(args[0], "server id"));
   if (domain === "debug" && action === "js") {
     const code = valueAfter(args, "--code") ?? (valueAfter(args, "--file") ? await fs.readFile(required(valueAfter(args, "--file"), "js file"), "utf8") : undefined);
@@ -43,6 +46,47 @@ async function run(domain: string | undefined, action: string | undefined, args:
       server_id: required(args[0], "server id"),
       code: required(code, "js code"),
       thread: (valueAfter(args, "--thread") as "main" | "async" | undefined) ?? "main",
+      timeout_ms: numberAfter(args, "--timeout-ms")
+    });
+  }
+  if (domain === "debug" && action === "hot-capabilities") {
+    return manager.hotPlugin({
+      server_id: required(args[0], "server id"),
+      action: "capabilities",
+      timeout_ms: numberAfter(args, "--timeout-ms")
+    });
+  }
+  if (domain === "debug" && action === "hot-list") {
+    return manager.hotPlugin({
+      server_id: required(args[0], "server id"),
+      action: "list",
+      timeout_ms: numberAfter(args, "--timeout-ms")
+    });
+  }
+  if (domain === "debug" && action === "hot-load") {
+    return manager.hotPlugin({
+      server_id: required(args[0], "server id"),
+      action: "load",
+      path: required(args[1], "plugin jar"),
+      enable: !args.includes("--no-enable"),
+      timeout_ms: numberAfter(args, "--timeout-ms")
+    });
+  }
+  if (domain === "debug" && action === "hot-unload") {
+    return manager.hotPlugin({
+      server_id: required(args[0], "server id"),
+      action: "unload",
+      plugin_name: required(args[1], "plugin name"),
+      timeout_ms: numberAfter(args, "--timeout-ms")
+    });
+  }
+  if (domain === "debug" && action === "hot-reload") {
+    return manager.hotPlugin({
+      server_id: required(args[0], "server id"),
+      action: "reload",
+      plugin_name: required(args[1], "plugin name"),
+      path: required(args[2], "plugin jar"),
+      enable: !args.includes("--no-enable"),
       timeout_ms: numberAfter(args, "--timeout-ms")
     });
   }
@@ -99,6 +143,7 @@ async function run(domain: string | undefined, action: string | undefined, args:
   if (domain === "server" && (action === "info" || action === "get")) return manager.get(required(args[0], "server id"));
   if (domain === "server" && action === "start") return manager.start(required(args[0], "server id"));
   if (domain === "server" && action === "stop") return manager.stop(required(args[0], "server id"));
+  if (domain === "server" && action === "kill") return manager.kill(required(args[0], "server id"));
   if (domain === "server" && action === "restart") return manager.restart(required(args[0], "server id"));
   if (domain === "server" && action === "destroy") return manager.destroy(required(args[0], "server id"));
   if (domain === "server" && action === "logs") {
@@ -196,6 +241,7 @@ function usage(): string {
     "  craft-runner server info <id>",
     "  craft-runner server start <id>",
     "  craft-runner server stop <id>",
+    "  craft-runner server kill <id>",
     "  craft-runner server restart <id>",
     "  craft-runner server destroy <id>",
     "  craft-runner server logs <id> [--tail <n>]",
@@ -207,8 +253,14 @@ function usage(): string {
     "  craft-runner server wait-ready <id> [--timeout-ms <ms>]",
     "  craft-runner server command <id> <command>",
     "  craft-runner debug install-agent <server-id> [--rebuild]",
+    "  craft-runner debug connect-agent <server-id> <connect-code>",
     "  craft-runner debug status <server-id>",
     "  craft-runner debug js <server-id> (--code <js>|--file <file.js>) [--thread main|async]",
+    "  craft-runner debug hot-capabilities <server-id>",
+    "  craft-runner debug hot-list <server-id>",
+    "  craft-runner debug hot-load <server-id> <plugin.jar> [--no-enable]",
+    "  craft-runner debug hot-unload <server-id> <plugin-name>",
+    "  craft-runner debug hot-reload <server-id> <plugin-name> <plugin.jar> [--no-enable]",
     "  craft-runner completion zsh",
     "  craft-runner completion install zsh [--dir <dir>]"
   ].join("\n");
@@ -385,7 +437,7 @@ function formatResult(domain: string | undefined, action: string | undefined, re
     );
   }
 
-  if (domain === "server" && ["create", "info", "get", "start", "stop", "restart"].includes(action ?? "") && isRecord(result)) {
+  if (domain === "server" && ["create", "info", "get", "start", "stop", "kill", "restart"].includes(action ?? "") && isRecord(result)) {
     return formatServer(result);
   }
 
@@ -430,12 +482,12 @@ function formatResult(domain: string | undefined, action: string | undefined, re
     return stringValue(result.response);
   }
 
-  if (domain === "debug" && action === "install-agent" && isRecord(result)) {
+  if (domain === "debug" && ["install-agent", "connect-agent"].includes(action ?? "") && isRecord(result)) {
     return [
-      "Debug agent installed.",
+      action === "connect-agent" ? "Debug agent connected." : "Debug agent installed.",
       formatServer(result),
       "",
-      "Restart or start the server so the platform loads craft-runner-agent.jar."
+      action === "connect-agent" ? "MCP can now use the registered file mailbox endpoint." : "Restart or start the server so the platform loads craft-runner-agent.jar."
     ].join("\n");
   }
 
@@ -443,6 +495,8 @@ function formatResult(domain: string | undefined, action: string | undefined, re
     return details("Debug agent", [
       ["Server", result.server_id],
       ["Configured", result.configured ? "yes" : "no"],
+      ["Endpoint", result.endpoint_name],
+      ["Endpoint file", result.endpoint_file],
       ["Agent jar", result.agent_jar],
       ["Agent jar exists", result.agent_jar_exists ? "yes" : "no"],
       ["All agent jars", Array.isArray(result.agent_jars) ? result.agent_jars.join(", ") : undefined],
@@ -450,6 +504,7 @@ function formatResult(domain: string | undefined, action: string | undefined, re
       ["Mailbox exists", result.mailbox_exists ? "yes" : "no"],
       ["Requests dir", result.requests_dir_exists ? "yes" : "no"],
       ["Responses dir", result.responses_dir_exists ? "yes" : "no"],
+      ["Endpoint file exists", result.endpoint_file_exists ? "yes" : "no"],
       ["Installed at", result.installed_at]
     ]);
   }
@@ -470,6 +525,10 @@ function formatResult(domain: string | undefined, action: string | undefined, re
       ["Error", result.error],
       ["Stack", result.stack]
     ]);
+  }
+
+  if (domain === "debug" && action?.startsWith("hot-") && isRecord(result)) {
+    return formatAgentResponse(result);
   }
 
   if (Array.isArray(result)) {
@@ -540,6 +599,32 @@ function formatStats(stats: Record<string, unknown>): string {
       ["State", paths.state_dir]
     ])
   ].join("\n").trimEnd();
+}
+
+function formatAgentResponse(response: Record<string, unknown>): string {
+  if (!response.ok) {
+    return details("Debug agent error", [
+      ["OK", "no"],
+      ["Error", response.error],
+      ["Stack", response.stack]
+    ]);
+  }
+  const result = isRecord(response.result) ? response.result : {};
+  const warnings = Array.isArray(result.warnings) ? result.warnings.join("\n") : undefined;
+  const plugin = isRecord(result.plugin) ? result.plugin : undefined;
+  return details("Hot plugin result", [
+    ["OK", "yes"],
+    ["Action", result.action],
+    ["Loaded", result.loaded],
+    ["Unloaded", result.unloaded],
+    ["Reloaded", result.reloaded],
+    ["Platform", result.platform],
+    ["Plugin", plugin ? `${plugin.name ?? ""}${plugin.version ? ` ${plugin.version}` : ""}` : undefined],
+    ["Enabled", plugin?.enabled ?? result.enabled],
+    ["Path", result.path],
+    ["Warnings", warnings],
+    ["Duration", `${response.durationMs ?? response.duration_ms ?? "?"} ms`]
+  ]);
 }
 
 function details(title: string | undefined, rows: Array<[string, unknown]>): string {
@@ -639,6 +724,7 @@ _craft_runner() {
     'info:show server metadata'
     'start:start a server'
     'stop:stop a server'
+    'kill:force-kill a hung server process'
     'restart:restart a server'
     'destroy:destroy a server'
     'logs:read server logs'
@@ -652,11 +738,17 @@ _craft_runner() {
   )
   debug_commands=(
     'install-agent:install JS debug agent'
+    'connect-agent:register manually installed agent from connect code'
     'status:show debug agent status'
     'js:execute JavaScript through the debug agent'
+    'hot-capabilities:show hot plugin support'
+    'hot-list:list loaded plugins through the debug agent'
+    'hot-load:runtime-load a Bukkit plugin jar'
+    'hot-unload:best-effort unload a Bukkit plugin'
+    'hot-reload:best-effort reload a Bukkit plugin'
   )
   completion_commands=('zsh:generate zsh completion script')
-  loaders=(custom vanilla paper purpur folia fabric forge neoforge spigot craftbukkit)
+  loaders=(custom vanilla paper purpur folia fabric forge neoforge spigot craftbukkit bungee bungeecord waterfall velocity)
 
   if (( CURRENT == 2 )); then
     _describe 'command' commands
@@ -734,7 +826,7 @@ _craft_runner() {
             '--no-eula[write eula=false]'
           return
           ;;
-        info|start|stop|restart|destroy|events|wait-ready|command)
+        info|start|stop|kill|restart|destroy|events|wait-ready|command)
           if (( CURRENT == 4 )); then
             _craft_runner_server_ids
             return
@@ -782,11 +874,35 @@ _craft_runner() {
         return
       fi
       case "$words[3]" in
-        install-agent|status)
+        install-agent|connect-agent|status|hot-capabilities|hot-list)
           if (( CURRENT == 4 )); then
             _craft_runner_server_ids
             return
           fi
+          ;;
+        hot-load)
+          if (( CURRENT == 4 )); then
+            _craft_runner_server_ids
+            return
+          fi
+          _arguments '--no-enable[load without enabling]' '--timeout-ms[timeout milliseconds]' '*:jar:_files -g "*.jar"'
+          return
+          ;;
+        hot-unload)
+          if (( CURRENT == 4 )); then
+            _craft_runner_server_ids
+            return
+          fi
+          _arguments '--timeout-ms[timeout milliseconds]'
+          return
+          ;;
+        hot-reload)
+          if (( CURRENT == 4 )); then
+            _craft_runner_server_ids
+            return
+          fi
+          _arguments '--no-enable[load without enabling]' '--timeout-ms[timeout milliseconds]' '*:jar:_files -g "*.jar"'
+          return
           ;;
         js)
           if (( CURRENT == 4 )); then
