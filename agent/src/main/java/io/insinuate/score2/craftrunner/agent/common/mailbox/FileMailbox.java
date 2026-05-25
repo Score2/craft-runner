@@ -87,16 +87,16 @@ public final class FileMailbox implements Runnable {
             return;
         }
 
-        if (request == null || request.id == null || request.id.isBlank()) {
+        if (request == null || request.id() == null || request.id().isBlank()) {
             writeResponse(DebugResponse.failure("unknown", "request id is required"));
             return;
         }
-        if (!config.token().equals(request.token)) {
-            writeResponse(DebugResponse.failure(request.id, "invalid token"));
+        if (!config.token().equals(request.token())) {
+            writeResponse(DebugResponse.failure(request.id(), "invalid token"));
             return;
         }
-        if (!"js".equalsIgnoreCase(request.language) && !"hot_plugin".equalsIgnoreCase(request.language)) {
-            writeResponse(DebugResponse.failure(request.id, "unsupported language: " + request.language));
+        if (!"js".equalsIgnoreCase(request.language()) && !"hot_plugin".equalsIgnoreCase(request.language())) {
+            writeResponse(DebugResponse.failure(request.id(), "unsupported language: " + request.language()));
             return;
         }
         writeResponse(execute(request));
@@ -106,41 +106,41 @@ public final class FileMailbox implements Runnable {
         long started = System.nanoTime();
         Future<Object> future = null;
         try {
-            if ("async".equalsIgnoreCase(request.thread)) {
+            if ("async".equalsIgnoreCase(request.thread())) {
                 future = asyncExecutor.submit(() -> executeRequest(request));
             } else {
                 future = platform.callMainThread(() -> executeRequest(request), asyncExecutor);
             }
             Object result = future.get(timeoutMs(request), TimeUnit.MILLISECONDS);
-            return DebugResponse.success(request.id, result, elapsedMs(started));
+            return DebugResponse.success(request.id(), result, elapsedMs(started));
         } catch (InterruptedException error) {
             Thread.currentThread().interrupt();
-            return DebugResponse.failure(request.id, error, elapsedMs(started));
+            return DebugResponse.failure(request.id(), error, elapsedMs(started));
         } catch (TimeoutException error) {
             if (future != null) {
                 future.cancel(true);
             }
-            return DebugResponse.failure(request.id, "execution timed out after " + timeoutMs(request) + "ms");
+            return DebugResponse.failure(request.id(), "execution timed out after " + timeoutMs(request) + "ms");
         } catch (ExecutionException error) {
-            return DebugResponse.failure(request.id, error.getCause() == null ? error : error.getCause(), elapsedMs(started));
+            return DebugResponse.failure(request.id(), error.getCause() == null ? error : error.getCause(), elapsedMs(started));
         } catch (Exception error) {
-            return DebugResponse.failure(request.id, error, elapsedMs(started));
+            return DebugResponse.failure(request.id(), error, elapsedMs(started));
         }
     }
 
     private Object executeRequest(DebugRequest request) {
-        if ("hot_plugin".equalsIgnoreCase(request.language)) {
+        if ("hot_plugin".equalsIgnoreCase(request.language())) {
             return hotPluginExecutor.execute(request);
         }
-        return executor.execute(request.code);
+        return executor.execute(request.code());
     }
 
     private void writeResponse(DebugResponse response) {
         try {
             Files.createDirectories(responses);
             Files.createDirectories(tmp);
-            Path tmpFile = tmp.resolve(response.id + "-" + UUID.randomUUID() + ".json.tmp");
-            Path responseFile = responses.resolve(response.id + ".json");
+            Path tmpFile = tmp.resolve(response.id() + "-" + UUID.randomUUID() + ".json.tmp");
+            Path responseFile = responses.resolve(response.id() + ".json");
             Files.writeString(tmpFile, gson.toJson(response) + "\n", StandardCharsets.UTF_8);
             Files.move(tmpFile, responseFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
         } catch (Exception error) {
@@ -153,6 +153,6 @@ public final class FileMailbox implements Runnable {
     }
 
     private long timeoutMs(DebugRequest request) {
-        return Math.max(1L, request.timeoutMs <= 0L ? 3000L : request.timeoutMs);
+        return Math.max(1L, request.timeoutMs() <= 0L ? 3000L : request.timeoutMs());
     }
 }

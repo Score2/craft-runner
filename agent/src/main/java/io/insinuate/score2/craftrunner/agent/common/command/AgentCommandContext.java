@@ -22,7 +22,11 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
+import lombok.Getter;
+import lombok.experimental.Accessors;
 
+@Getter
+@Accessors(fluent = true)
 public final class AgentCommandContext {
     static final String PREFIX = "§8[§6CR§e§lA§8] ";
     static final String GRAY = "§7";
@@ -39,18 +43,6 @@ public final class AgentCommandContext {
         this.platform = platform;
         this.runtime = runtime;
         this.hotPlugins = platform.hotPluginOperations();
-    }
-
-    public AgentPlatform platform() {
-        return platform;
-    }
-
-    public AgentRuntime runtime() {
-        return runtime;
-    }
-
-    public HotPluginOperations hotPlugins() {
-        return hotPlugins;
     }
 
     public void send(AgentCommandSender sender, String message) {

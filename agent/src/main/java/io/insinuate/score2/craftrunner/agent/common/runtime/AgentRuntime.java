@@ -70,7 +70,7 @@ public final class AgentRuntime {
 
         if (Files.isRegularFile(endpointConfigFile)) {
             AgentConfig config = readConfig(endpointConfigFile);
-            config.endpointName = endpointName;
+            config.endpointName(endpointName);
             return new LoadedConfig(endpoint, endpointName, config, false);
         }
         LoadedConfig existingEndpoint = findSingleEndpointConfig(root);
@@ -112,7 +112,7 @@ public final class AgentRuntime {
                 }
                 AgentConfig config = readConfig(configFile);
                 String name = entry.getFileName().toString();
-                config.endpointName = name;
+                config.endpointName(name);
                 LoadedConfig loaded = new LoadedConfig(entry, name, config, false);
                 if (found != null) {
                     return null;

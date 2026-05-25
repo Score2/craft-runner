@@ -21,6 +21,7 @@ test("agent jar is a slim single artifact and loads GraalJS as runtime libraries
   const listing = await execFileAsync("jar", ["tf", jar], { cwd: process.cwd(), maxBuffer: 20 * 1024 * 1024 });
   assert.doesNotMatch(listing.stdout, /com\/oracle\/truffle\//);
   assert.doesNotMatch(listing.stdout, /org\/graalvm\/polyglot\/Context\.class/);
+  assert.doesNotMatch(listing.stdout, /lombok\//);
   assert.match(listing.stdout, /io\/insinuate\/score2\/craftrunner\/agent\/common\/js\/GraalJsLibraries\.class/);
   assert.match(listing.stdout, /io\/insinuate\/score2\/craftrunner\/agent\/common\/command\/BrigadierAgentCommand\.class/);
   assert.match(listing.stdout, /io\/insinuate\/score2\/craftrunner\/agent\/common\/command\/CloudAgentCommandRegistrar\.class/);
