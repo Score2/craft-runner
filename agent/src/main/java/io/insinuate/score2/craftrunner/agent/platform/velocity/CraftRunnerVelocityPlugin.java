@@ -7,9 +7,11 @@ import com.velocitypowered.api.event.proxy.ProxyShutdownEvent;
 import com.velocitypowered.api.plugin.Plugin;
 import com.velocitypowered.api.plugin.PluginContainer;
 import com.velocitypowered.api.proxy.ProxyServer;
-import io.insinuate.score2.craftrunner.agent.common.AgentPlatform;
-import io.insinuate.score2.craftrunner.agent.common.AgentRuntime;
+import io.insinuate.score2.craftrunner.agent.common.runtime.AgentPlatform;
+import io.insinuate.score2.craftrunner.agent.common.runtime.AgentRuntime;
 import io.insinuate.score2.craftrunner.agent.common.hot.HotPluginOperations;
+import io.insinuate.score2.craftrunner.agent.platform.velocity.api.VelocityDebugApi;
+import io.insinuate.score2.craftrunner.agent.platform.velocity.command.CloudVelocityAgentCommand;
 import io.insinuate.score2.craftrunner.agent.platform.velocity.hot.VelocityHotPluginOperations;
 import java.net.InetSocketAddress;
 import java.util.logging.Level;
@@ -56,7 +58,7 @@ public final class CraftRunnerVelocityPlugin implements AgentPlatform {
         }
     }
 
-    ProxyServer proxy() {
+    public ProxyServer proxy() {
         return proxy;
     }
 

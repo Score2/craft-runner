@@ -1,5 +1,6 @@
-package io.insinuate.score2.craftrunner.agent.common;
+package io.insinuate.score2.craftrunner.agent.common.api;
 
+import io.insinuate.score2.craftrunner.agent.common.runtime.AgentPlatform;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;

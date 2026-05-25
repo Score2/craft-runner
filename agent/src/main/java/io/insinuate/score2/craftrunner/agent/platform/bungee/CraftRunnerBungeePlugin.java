@@ -1,8 +1,10 @@
 package io.insinuate.score2.craftrunner.agent.platform.bungee;
 
-import io.insinuate.score2.craftrunner.agent.common.AgentPlatform;
-import io.insinuate.score2.craftrunner.agent.common.AgentRuntime;
+import io.insinuate.score2.craftrunner.agent.common.runtime.AgentPlatform;
+import io.insinuate.score2.craftrunner.agent.common.runtime.AgentRuntime;
 import io.insinuate.score2.craftrunner.agent.common.hot.HotPluginOperations;
+import io.insinuate.score2.craftrunner.agent.platform.bungee.api.BungeeDebugApi;
+import io.insinuate.score2.craftrunner.agent.platform.bungee.command.CloudBungeeAgentCommand;
 import io.insinuate.score2.craftrunner.agent.platform.bungee.hot.BungeeHotPluginOperations;
 import java.net.SocketAddress;
 import java.util.logging.Logger;

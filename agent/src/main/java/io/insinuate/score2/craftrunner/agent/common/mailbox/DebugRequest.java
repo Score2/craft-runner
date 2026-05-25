@@ -1,4 +1,4 @@
-package io.insinuate.score2.craftrunner.agent.common;
+package io.insinuate.score2.craftrunner.agent.common.mailbox;
 
 public final class DebugRequest {
     public String id = "";

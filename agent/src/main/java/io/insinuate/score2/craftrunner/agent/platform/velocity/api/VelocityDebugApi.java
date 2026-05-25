@@ -1,14 +1,15 @@
-package io.insinuate.score2.craftrunner.agent.platform.velocity;
+package io.insinuate.score2.craftrunner.agent.platform.velocity.api;
 
 import com.velocitypowered.api.proxy.ProxyServer;
-import io.insinuate.score2.craftrunner.agent.common.AgentPlatform;
-import io.insinuate.score2.craftrunner.agent.common.PlatformDebugApi;
+import io.insinuate.score2.craftrunner.agent.common.runtime.AgentPlatform;
+import io.insinuate.score2.craftrunner.agent.common.api.PlatformDebugApi;
+import io.insinuate.score2.craftrunner.agent.platform.velocity.CraftRunnerVelocityPlugin;
 import java.util.List;
 
 public final class VelocityDebugApi extends PlatformDebugApi {
     private final ProxyServer proxy;
 
-    VelocityDebugApi(CraftRunnerVelocityPlugin plugin) {
+    public VelocityDebugApi(CraftRunnerVelocityPlugin plugin) {
         super((AgentPlatform) plugin);
         this.proxy = plugin.proxy();
     }

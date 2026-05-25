@@ -1,7 +1,8 @@
-package io.insinuate.score2.craftrunner.agent.common;
+package io.insinuate.score2.craftrunner.agent.common.runtime;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import io.insinuate.score2.craftrunner.agent.common.mailbox.FileMailbox;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;

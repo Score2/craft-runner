@@ -17,8 +17,9 @@ public final class UnsupportedHotPluginOperations implements HotPluginOperations
             "platform", platformName,
             "hotLoadPlugin", false,
             "hotUnloadPlugin", false,
+            "hotReloadPlugin", false,
             "supportedPluginTypes", List.of(),
-            "warnings", List.of("Hot plugin lifecycle is currently implemented only for Bukkit-family platforms.")
+            "warnings", List.of("Hot plugin lifecycle is currently implemented only for Bukkit-family and proxy platforms.")
         );
     }
 

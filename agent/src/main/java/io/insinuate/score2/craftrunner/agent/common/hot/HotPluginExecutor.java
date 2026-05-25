@@ -1,7 +1,7 @@
 package io.insinuate.score2.craftrunner.agent.common.hot;
 
-import io.insinuate.score2.craftrunner.agent.common.AgentPlatform;
-import io.insinuate.score2.craftrunner.agent.common.DebugRequest;
+import io.insinuate.score2.craftrunner.agent.common.runtime.AgentPlatform;
+import io.insinuate.score2.craftrunner.agent.common.mailbox.DebugRequest;
 import java.nio.file.Path;
 import java.util.Locale;
 

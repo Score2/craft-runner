@@ -1,4 +1,4 @@
-package io.insinuate.score2.craftrunner.agent.common;
+package io.insinuate.score2.craftrunner.agent.common.runtime;
 
 import java.nio.file.Path;
 import java.util.Map;

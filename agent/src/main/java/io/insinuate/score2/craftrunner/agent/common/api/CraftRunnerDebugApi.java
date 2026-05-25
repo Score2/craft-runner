@@ -1,5 +1,6 @@
-package io.insinuate.score2.craftrunner.agent.common;
+package io.insinuate.score2.craftrunner.agent.common.api;
 
+import io.insinuate.score2.craftrunner.agent.common.runtime.AgentPlatform;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -7,7 +8,7 @@ public final class CraftRunnerDebugApi {
     public final CommonDebugApi common;
     public final Object platform;
 
-    CraftRunnerDebugApi(AgentPlatform agentPlatform) {
+    public CraftRunnerDebugApi(AgentPlatform agentPlatform) {
         this.common = new CommonDebugApi(agentPlatform);
         this.platform = agentPlatform.debugPlatformApi();
     }

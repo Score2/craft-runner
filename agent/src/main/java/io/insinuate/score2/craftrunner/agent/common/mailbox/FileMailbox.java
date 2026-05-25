@@ -1,8 +1,11 @@
-package io.insinuate.score2.craftrunner.agent.common;
+package io.insinuate.score2.craftrunner.agent.common.mailbox;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import io.insinuate.score2.craftrunner.agent.common.hot.HotPluginExecutor;
+import io.insinuate.score2.craftrunner.agent.common.js.JsDebugExecutor;
+import io.insinuate.score2.craftrunner.agent.common.runtime.AgentConfig;
+import io.insinuate.score2.craftrunner.agent.common.runtime.AgentPlatform;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -18,7 +21,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.logging.Level;
 
-final class FileMailbox implements Runnable {
+public final class FileMailbox implements Runnable {
     private final AgentPlatform platform;
     private final AgentConfig config;
     private final Path root;
@@ -31,7 +34,7 @@ final class FileMailbox implements Runnable {
     private final Gson gson = new GsonBuilder().disableHtmlEscaping().create();
     private final Set<String> seen = new HashSet<>();
 
-    FileMailbox(AgentPlatform platform, AgentConfig config, Path root, ExecutorService asyncExecutor) {
+    public FileMailbox(AgentPlatform platform, AgentConfig config, Path root, ExecutorService asyncExecutor) {
         this.platform = platform;
         this.config = config;
         this.root = root;
@@ -43,7 +46,7 @@ final class FileMailbox implements Runnable {
         this.hotPluginExecutor = new HotPluginExecutor(platform);
     }
 
-    void ensureDirectories() throws IOException {
+    public void ensureDirectories() throws IOException {
         Files.createDirectories(root);
         Files.createDirectories(requests);
         Files.createDirectories(responses);
@@ -88,7 +91,7 @@ final class FileMailbox implements Runnable {
             writeResponse(DebugResponse.failure("unknown", "request id is required"));
             return;
         }
-        if (!config.token.equals(request.token)) {
+        if (!config.token().equals(request.token)) {
             writeResponse(DebugResponse.failure(request.id, "invalid token"));
             return;
         }

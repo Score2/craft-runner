@@ -1,8 +1,10 @@
 package io.insinuate.score2.craftrunner.agent.platform.bukkit;
 
-import io.insinuate.score2.craftrunner.agent.common.AgentPlatform;
-import io.insinuate.score2.craftrunner.agent.common.AgentRuntime;
+import io.insinuate.score2.craftrunner.agent.common.runtime.AgentPlatform;
+import io.insinuate.score2.craftrunner.agent.common.runtime.AgentRuntime;
 import io.insinuate.score2.craftrunner.agent.common.hot.HotPluginOperations;
+import io.insinuate.score2.craftrunner.agent.platform.bukkit.api.BukkitDebugApi;
+import io.insinuate.score2.craftrunner.agent.platform.bukkit.command.CloudBukkitAgentCommand;
 import io.insinuate.score2.craftrunner.agent.platform.bukkit.hot.BukkitHotPluginOperations;
 import java.lang.reflect.Method;
 import java.util.concurrent.Callable;

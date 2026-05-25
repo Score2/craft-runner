@@ -1,4 +1,4 @@
-package io.insinuate.score2.craftrunner.agent.common;
+package io.insinuate.score2.craftrunner.agent.common.reflect;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
@@ -10,11 +10,11 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-final class ReflectiveAccess {
+public final class ReflectiveAccess {
     private ReflectiveAccess() {
     }
 
-    static Class<?> type(String className) {
+    public static Class<?> type(String className) {
         try {
             return switch (className) {
                 case "boolean" -> boolean.class;
@@ -32,7 +32,7 @@ final class ReflectiveAccess {
         }
     }
 
-    static boolean classExists(String className) {
+    public static boolean classExists(String className) {
         try {
             type(className);
             return true;
@@ -41,7 +41,7 @@ final class ReflectiveAccess {
         }
     }
 
-    static Object newInstance(Class<?> type, Object... args) {
+    public static Object newInstance(Class<?> type, Object... args) {
         for (Constructor<?> constructor : sortedConstructors(type)) {
             Object[] converted = convertArgs(constructor.getParameterTypes(), args);
             if (converted == null) {
@@ -57,11 +57,11 @@ final class ReflectiveAccess {
         throw new IllegalArgumentException("no matching constructor: " + type.getName() + "/" + args.length);
     }
 
-    static Object callStatic(Class<?> type, String methodName, Object... args) {
+    public static Object callStatic(Class<?> type, String methodName, Object... args) {
         return callMethod(type, null, methodName, args, true);
     }
 
-    static Object call(Object target, String methodName, Object... args) {
+    public static Object call(Object target, String methodName, Object... args) {
         if (target == null) {
             throw new IllegalArgumentException("target is null");
         }
@@ -70,7 +70,7 @@ final class ReflectiveAccess {
         return callMethod(type, instance, methodName, args, instance == null);
     }
 
-    static Object get(Object target, String fieldName) {
+    public static Object get(Object target, String fieldName) {
         if (target == null) {
             throw new IllegalArgumentException("target is null");
         }
@@ -79,7 +79,7 @@ final class ReflectiveAccess {
         return getFieldValue(type, instance, fieldName);
     }
 
-    static void set(Object target, String fieldName, Object value) {
+    public static void set(Object target, String fieldName, Object value) {
         if (target == null) {
             throw new IllegalArgumentException("target is null");
         }
@@ -88,15 +88,15 @@ final class ReflectiveAccess {
         setFieldValue(type, instance, fieldName, value);
     }
 
-    static Object getStatic(Class<?> type, String fieldName) {
+    public static Object getStatic(Class<?> type, String fieldName) {
         return getFieldValue(type, null, fieldName);
     }
 
-    static void setStatic(Class<?> type, String fieldName, Object value) {
+    public static void setStatic(Class<?> type, String fieldName, Object value) {
         setFieldValue(type, null, fieldName, value);
     }
 
-    static List<String> methodNames(Object targetOrClassName) {
+    public static List<String> methodNames(Object targetOrClassName) {
         Class<?> type = resolveTargetClass(targetOrClassName);
         Set<String> names = new LinkedHashSet<>();
         for (Method method : allMethods(type)) {
@@ -105,7 +105,7 @@ final class ReflectiveAccess {
         return new ArrayList<>(names);
     }
 
-    static List<String> fieldNames(Object targetOrClassName) {
+    public static List<String> fieldNames(Object targetOrClassName) {
         Class<?> type = resolveTargetClass(targetOrClassName);
         Set<String> names = new LinkedHashSet<>();
         Class<?> current = type;
@@ -118,7 +118,7 @@ final class ReflectiveAccess {
         return new ArrayList<>(names);
     }
 
-    static Object coerce(Object value, Class<?> targetType) {
+    public static Object coerce(Object value, Class<?> targetType) {
         if (value == null) {
             if (targetType.isPrimitive()) {
                 throw new IllegalArgumentException("cannot pass null to primitive " + targetType.getName());

@@ -37,8 +37,8 @@ dependencies {
     compileOnly("net.neoforged:bus:8.0.5") {
         isTransitive = false
     }
-    implementation("org.graalvm.polyglot:polyglot:25.0.3")
-    implementation("org.graalvm.polyglot:js:25.0.3")
+    compileOnly("org.graalvm.polyglot:polyglot:25.0.3")
+    compileOnly("org.graalvm.polyglot:js:25.0.3")
     implementation("com.google.code.gson:gson:2.13.2")
     implementation("org.incendo:cloud-paper:2.0.0-beta.15")
     implementation("org.incendo:cloud-bungee:2.0.0-beta.15")

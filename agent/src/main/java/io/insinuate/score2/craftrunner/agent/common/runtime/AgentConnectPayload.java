@@ -1,4 +1,4 @@
-package io.insinuate.score2.craftrunner.agent.common;
+package io.insinuate.score2.craftrunner.agent.common.runtime;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
