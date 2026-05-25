@@ -8,7 +8,7 @@ import { RemoteBridge } from "../remote/bridge.js";
 test("RemoteBridge uses non-interactive SSH and sends bridge JSON", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "craft-runner-remote-bridge-"));
   const bin = path.join(root, "bin");
-  const ssh = path.join(bin, "ssh");
+  const ssh = path.join(bin, process.platform === "win32" ? "ssh.cmd" : "ssh");
   const calls = path.join(root, "calls.jsonl");
   const payload = path.join(root, "plugin.jar");
   await fs.mkdir(bin, { recursive: true });
@@ -16,7 +16,9 @@ test("RemoteBridge uses non-interactive SSH and sends bridge JSON", async () => 
   await writeFakeSsh(ssh, calls);
 
   const previousPath = process.env.PATH;
+  const previousPathCase = process.env.Path;
   process.env.PATH = `${bin}${path.delimiter}${previousPath ?? ""}`;
+  process.env.Path = `${bin}${path.delimiter}${previousPathCase ?? previousPath ?? ""}`;
   try {
     const result = await new RemoteBridge("lab-linux").request("add_plugin", {
       server_id: "remote-test",
@@ -41,30 +43,42 @@ test("RemoteBridge uses non-interactive SSH and sends bridge JSON", async () => 
     assert.equal(records.some((record) => record.command.join(" ") === "craftr bridge request"), true);
   } finally {
     process.env.PATH = previousPath;
+    if (previousPathCase === undefined) {
+      delete process.env.Path;
+    } else {
+      process.env.Path = previousPathCase;
+    }
   }
 });
 
 test("RemoteBridge supports direct ssh target strings with ports", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "craft-runner-remote-direct-"));
   const bin = path.join(root, "bin");
-  const ssh = path.join(bin, "ssh");
+  const ssh = path.join(bin, process.platform === "win32" ? "ssh.cmd" : "ssh");
   const calls = path.join(root, "calls.jsonl");
   await fs.mkdir(bin, { recursive: true });
   await writeFakeSsh(ssh, calls);
 
   const previousPath = process.env.PATH;
+  const previousPathCase = process.env.Path;
   process.env.PATH = `${bin}${path.delimiter}${previousPath ?? ""}`;
+  process.env.Path = `${bin}${path.delimiter}${previousPathCase ?? previousPath ?? ""}`;
   try {
     await new RemoteBridge("admin@10.0.0.2:2222").request("get_stats", {});
     const records = (await fs.readFile(calls, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
     assert.equal(records.some((record) => record.args.includes("-p") && record.args.includes("2222") && record.target === "admin@10.0.0.2"), true);
   } finally {
     process.env.PATH = previousPath;
+    if (previousPathCase === undefined) {
+      delete process.env.Path;
+    } else {
+      process.env.Path = previousPathCase;
+    }
   }
 });
 
 async function writeFakeSsh(target: string, calls: string): Promise<void> {
-  await fs.writeFile(target, [
+  const script = [
     `#!${process.execPath}`,
     "const fs = require('fs');",
     `const calls = ${JSON.stringify(calls)};`,
@@ -99,6 +113,13 @@ async function writeFakeSsh(target: string, calls: string): Promise<void> {
     "  }",
     "  process.exit(1);",
     "});"
-  ].join("\n"));
-  await fs.chmod(target, 0o755);
+  ].join("\n");
+  if (target.endsWith(".cmd")) {
+    const scriptFile = path.join(path.dirname(target), "ssh-fake.js");
+    await fs.writeFile(scriptFile, script);
+    await fs.writeFile(target, `@echo off\r\n"${process.execPath}" "%~dp0ssh-fake.js" %*\r\n`);
+  } else {
+    await fs.writeFile(target, script);
+    await fs.chmod(target, 0o755);
+  }
 }
