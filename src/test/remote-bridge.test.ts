@@ -15,8 +15,10 @@ test("RemoteBridge uses non-interactive SSH and sends bridge JSON", async () => 
   await fs.writeFile(payload, Buffer.from([0, 1, 2, 3, 4]));
   await writeFakeSsh(ssh, calls);
 
+  const previousSshBin = process.env.CRAFT_RUNNER_SSH_BIN;
   const previousPath = process.env.PATH;
   const previousPathCase = process.env.Path;
+  process.env.CRAFT_RUNNER_SSH_BIN = ssh;
   process.env.PATH = `${bin}${path.delimiter}${previousPath ?? ""}`;
   process.env.Path = `${bin}${path.delimiter}${previousPathCase ?? previousPath ?? ""}`;
   try {
@@ -42,6 +44,11 @@ test("RemoteBridge uses non-interactive SSH and sends bridge JSON", async () => 
     assert.equal(records.some((record) => record.command.join(" ") === "craftr bridge version"), true);
     assert.equal(records.some((record) => record.command.join(" ") === "craftr bridge request"), true);
   } finally {
+    if (previousSshBin === undefined) {
+      delete process.env.CRAFT_RUNNER_SSH_BIN;
+    } else {
+      process.env.CRAFT_RUNNER_SSH_BIN = previousSshBin;
+    }
     process.env.PATH = previousPath;
     if (previousPathCase === undefined) {
       delete process.env.Path;
@@ -59,8 +66,10 @@ test("RemoteBridge supports direct ssh target strings with ports", async () => {
   await fs.mkdir(bin, { recursive: true });
   await writeFakeSsh(ssh, calls);
 
+  const previousSshBin = process.env.CRAFT_RUNNER_SSH_BIN;
   const previousPath = process.env.PATH;
   const previousPathCase = process.env.Path;
+  process.env.CRAFT_RUNNER_SSH_BIN = ssh;
   process.env.PATH = `${bin}${path.delimiter}${previousPath ?? ""}`;
   process.env.Path = `${bin}${path.delimiter}${previousPathCase ?? previousPath ?? ""}`;
   try {
@@ -68,6 +77,11 @@ test("RemoteBridge supports direct ssh target strings with ports", async () => {
     const records = (await fs.readFile(calls, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
     assert.equal(records.some((record) => record.args.includes("-p") && record.args.includes("2222") && record.target === "admin@10.0.0.2"), true);
   } finally {
+    if (previousSshBin === undefined) {
+      delete process.env.CRAFT_RUNNER_SSH_BIN;
+    } else {
+      process.env.CRAFT_RUNNER_SSH_BIN = previousSshBin;
+    }
     process.env.PATH = previousPath;
     if (previousPathCase === undefined) {
       delete process.env.Path;

@@ -128,7 +128,7 @@ async function runSsh(remoteHost: string, command: string[], stdin?: string, tim
     ...sshTargetArgs(remoteHost),
     ...command
   ];
-  const child = spawn("ssh", args, {
+  const child = spawn(process.env.CRAFT_RUNNER_SSH_BIN ?? "ssh", args, {
     stdio: ["pipe", "pipe", "pipe"]
   });
   let stdout = "";
