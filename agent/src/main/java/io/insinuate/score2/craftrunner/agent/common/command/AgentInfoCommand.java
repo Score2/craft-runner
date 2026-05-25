@@ -1,6 +1,5 @@
 package io.insinuate.score2.craftrunner.agent.common.command;
 
-import io.insinuate.score2.craftrunner.agent.common.runtime.AgentConnectPayload;
 import io.insinuate.score2.craftrunner.agent.common.runtime.AgentEndpointInfo;
 
 final class AgentInfoCommand {
@@ -17,10 +16,5 @@ final class AgentInfoCommand {
 
     void token(AgentCommandContext context, AgentCommandSender sender) {
         context.send(sender, "Token: " + AgentCommandContext.YELLOW + context.runtime().endpointInfo().token());
-    }
-
-    void connect(AgentCommandContext context, AgentCommandSender sender) {
-        context.send(sender, AgentCommandContext.GREEN + "CraftRunnerAgent connect code:");
-        context.send(sender, AgentCommandContext.YELLOW + AgentConnectPayload.encode(context.platform(), context.runtime().endpointInfo()));
     }
 }

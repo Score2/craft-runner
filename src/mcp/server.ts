@@ -22,7 +22,7 @@ const JsonRecordSchema = z.record(z.string(), z.union([z.string(), z.number(), z
 export function createMcpServer(manager = new ServerManager()): McpServer {
   const server = new McpServer({
     name: "craft-runner",
-    version: "0.1.0"
+    version: "1.0.0"
   });
 
   const tool = <T extends z.ZodRawShape>(
@@ -222,10 +222,12 @@ export function createMcpServer(manager = new ServerManager()): McpServer {
     server_id: z.string()
   }, (args) => manager.debugAgentStatus(args.server_id));
 
-  tool("debug_connect_agent", "Register a manually installed Craft Runner agent from a /craftragent connect code so MCP tools can use its file mailbox endpoint.", {
-    server_id: z.string(),
-    connect_code: z.string()
-  }, (args) => manager.connectDebugAgent(args.server_id, args.connect_code));
+  tool("debug_discover_agents", "Scan ~/.craft-runner/agents for manually installed Craft Runner agents. Discovered agents are temporary external endpoints and cannot be destroyed by craft-runner.", {}, () => manager.discoverDebugAgents());
+
+  tool("debug_register_discovered_agent", "Register a scanned manual agent endpoint as an external server record so debug_eval_js and hot plugin tools can use it. This does not grant lifecycle/delete control.", {
+    endpoint_name: z.string(),
+    id: z.string().optional()
+  }, (args) => manager.registerDiscoveredAgent(args.endpoint_name, args.id));
 
   tool("debug_agent_api", "Describe the JavaScript DSL exposed by the debug agent. Agents should call this before writing non-trivial debug_eval_js scripts.", {
     server_id: z.string().optional()
@@ -365,13 +367,12 @@ function debugAgentApiDocs(loader?: string): Record<string, unknown> {
     namespace: "cr",
     rule: "Use cr.common for cross-platform Java/Minecraft reflection helpers. Use cr.platform only after checking platform capabilities because these methods depend on the loaded server platform.",
     file_endpoint: {
-      layout: ".craft-runner-agent/<server-port>/",
-      protocol: "Write request JSON files into requests/ and read response JSON files from responses/. The endpoint name is the Minecraft server port so local and future remote runners can identify instances without relying on craft-runner metadata.",
+      layout: "~/.craft-runner/agents/<server-port>/",
+      protocol: "Unix-like systems prefer agent.sock when available; otherwise write request JSON files into requests/ and read response JSON files from responses/. Windows uses file mailbox fallback.",
       notes: [
         "MCP-managed servers record the endpoint in debug_agent_status.mailbox_dir.",
-        "Manually installed agents create the endpoint and config automatically; use /craftragent status, /craftragent token, or /craftragent connect in Bukkit-family, BungeeCord/Waterfall, and Velocity servers to inspect it.",
-        "/craftragent connect emits a URL-safe base64 JSON payload with host candidates, server port, endpoint path, and token for external tools.",
-        "A legacy .craft-runner-agent/config.json endpoint is still accepted for compatibility."
+        "Manually installed agents create a discoverable endpoint automatically; call debug_discover_agents, then debug_register_discovered_agent to use it.",
+        "Use /craftragent status or /craftragent token in Bukkit-family, BungeeCord/Waterfall, and Velocity servers for direct inspection."
       ]
     },
     current_loader_hint: loader ?? null,
@@ -432,7 +433,7 @@ function debugAgentApiDocs(loader?: string): Record<string, unknown> {
           "cr.platform.onlineCount()"
         ],
         hot_plugin_notes: [
-          "BungeeCord/Waterfall and Velocity currently expose mailbox, JS eval, connect-code, and list/capability surfaces.",
+          "BungeeCord/Waterfall and Velocity currently expose mailbox/socket, JS eval, and list/capability surfaces.",
           "Hot load/unload on proxy platforms is reported as unsupported until a platform-specific lifecycle path can safely initialize and dispose plugin state.",
           "Velocity has no public unload API, and runtime loading cannot safely replay ProxyInitializeEvent only for a newly loaded plugin without affecting existing plugins."
         ]

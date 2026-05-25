@@ -20,7 +20,7 @@ import java.util.logging.Logger;
 @Plugin(
     id = "craft-runner-agent",
     name = "CraftRunnerAgent",
-    version = "0.1.0",
+    version = "1.0.0",
     description = "Local craft-runner debug bridge for executing JavaScript through a file mailbox.",
     authors = {"Score2"}
 )

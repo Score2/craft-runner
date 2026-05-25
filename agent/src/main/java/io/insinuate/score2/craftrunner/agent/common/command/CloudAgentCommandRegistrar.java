@@ -37,8 +37,6 @@ public final class CloudAgentCommandRegistrar<C> {
         commandManager.command(base().literal("help").handler(context -> controller.help(sender(context), "craftragent")));
         commandManager.command(base().literal("status").handler(context -> controller.status(sender(context))));
         commandManager.command(base().literal("token").handler(context -> controller.token(sender(context))));
-        commandManager.command(base().literal("connect").handler(context -> controller.connect(sender(context))));
-        commandManager.command(base().literal("code").handler(context -> controller.connect(sender(context))));
     }
 
     private void registerHotCommands() {

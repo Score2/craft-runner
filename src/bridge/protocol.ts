@@ -14,7 +14,7 @@ export const BRIDGE_PROTOCOL = {
 } as const;
 
 export const PACKAGE_NAME = "@score2/craft-runner";
-export const PACKAGE_VERSION = "0.1.0";
+export const PACKAGE_VERSION = "1.0.0";
 
 export type BridgeVersion = {
   name: string;
@@ -185,8 +185,10 @@ export async function dispatchBridgeTool(
       return manager.installDebugAgent(required(clean.server_id, "server_id"), await getAgentJar({ rebuild: clean.rebuild }));
     case "debug_agent_status":
       return manager.debugAgentStatus(required(clean.server_id, "server_id"));
-    case "debug_connect_agent":
-      return manager.connectDebugAgent(required(clean.server_id, "server_id"), required(clean.connect_code, "connect_code"));
+    case "debug_discover_agents":
+      return manager.discoverDebugAgents();
+    case "debug_register_discovered_agent":
+      return manager.registerDiscoveredAgent(required(clean.endpoint_name, "endpoint_name"), clean.id);
     case "debug_agent_api": {
       const server = clean.server_id ? await manager.get(clean.server_id) : undefined;
       return {

@@ -11,7 +11,6 @@ public final class AgentCommandController {
         "help",
         "status",
         "token",
-        "connect",
         "capabilities",
         "list",
         "load",
@@ -45,7 +44,6 @@ public final class AgentCommandController {
         switch (args[0].toLowerCase(Locale.ROOT)) {
             case "status" -> status(sender);
             case "token" -> token(sender);
-            case "connect", "code" -> connect(sender);
             case "capabilities", "hot-capabilities" -> capabilities(sender);
             case "list", "hot-list" -> list(sender);
             case "hot-load", "load" -> load(sender, required(args, 1, "plugin jar or plugin name"), !context.contains(args, "--no-enable"));
@@ -69,10 +67,6 @@ public final class AgentCommandController {
 
     public void token(AgentCommandSender sender) {
         run(sender, () -> infoCommand.token(context, sender));
-    }
-
-    public void connect(AgentCommandSender sender) {
-        run(sender, () -> infoCommand.connect(context, sender));
     }
 
     public void capabilities(AgentCommandSender sender) {

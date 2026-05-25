@@ -25,7 +25,8 @@ test("MCP server exposes craft-runner tools over stdio", async () => {
     assert.equal(names.has("read_server_log"), true);
     assert.equal(names.has("list_java_installations"), true);
     assert.equal(names.has("debug_install_agent"), true);
-    assert.equal(names.has("debug_connect_agent"), true);
+    assert.equal(names.has("debug_discover_agents"), true);
+    assert.equal(names.has("debug_register_discovered_agent"), true);
     assert.equal(names.has("debug_agent_api"), true);
     assert.equal(names.has("debug_eval_js"), true);
     assert.equal(names.has("hot_plugin_capabilities"), true);
@@ -60,6 +61,7 @@ test("MCP debug agent rebuild does not corrupt stdio transport", async () => {
     cwd: process.cwd(),
     env: compactEnv({
       ...process.env,
+      CRAFT_RUNNER_HOME: path.join(root, "home"),
       CRAFT_RUNNER_CACHE_DIR: path.join(root, "cache"),
       CRAFT_RUNNER_SERVER_BASE_DIR: path.join(root, "servers"),
       CRAFT_RUNNER_STATE_DIR: path.join(root, "state")

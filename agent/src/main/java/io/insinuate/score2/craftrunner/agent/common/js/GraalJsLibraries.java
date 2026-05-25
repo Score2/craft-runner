@@ -51,7 +51,7 @@ final class GraalJsLibraries {
 
     private ClassLoader createClassLoader() {
         try {
-            Path root = Path.of("").toAbsolutePath().resolve(".craft-runner-agent")
+            Path root = Path.of(System.getProperty("user.home"), ".craft-runner", "cache", "agent-libraries")
                 .resolve("libraries")
                 .resolve("graaljs-" + VERSION);
             Files.createDirectories(root);

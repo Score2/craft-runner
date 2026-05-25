@@ -146,34 +146,47 @@ test("ServerManager sends structured hot plugin requests through file mailbox", 
   assert.equal(request.path, fakePlugin);
 });
 
-test("ServerManager registers manually installed agent connect codes", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "craft-runner-connect-agent-test-"));
-  const fakeCore = path.join(root, "fake-server.jar");
-  await fs.writeFile(fakeCore, "fake jar");
-
-  const manager = new ServerManager(testConfig(root));
-  const server = await manager.create({
-    id: "connect-agent-test",
-    core_ref: {
-      loader: "custom",
-      minecraft_version: "1.20.4",
-      path: fakeCore
-    }
-  });
-  const endpoint = path.join(server.server_dir, ".craft-runner-agent", String(server.port));
-  const code = Buffer.from(JSON.stringify({
-    schema: "craft-runner-agent-connect",
-    version: 1,
-    endpointName: String(server.port),
-    endpoint,
+test("ServerManager discovers manually installed agents and registers them as external servers", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "craft-runner-discover-agent-test-"));
+  const config = testConfig(root);
+  const manager = new ServerManager(config);
+  const endpointName = "41234";
+  const endpoint = path.join(config.agents_dir, endpointName);
+  await fs.mkdir(endpoint, { recursive: true });
+  await fs.writeFile(path.join(endpoint, "config.json"), JSON.stringify({
     token: "manual-token",
-    serverPort: server.port
-  }), "utf8").toString("base64url");
+    endpointName,
+    pollIntervalMs: 250
+  }));
+  await fs.writeFile(path.join(endpoint, "endpoint.json"), JSON.stringify({
+    schema: "craft-runner-agent-endpoint",
+    version: 1,
+    endpointName,
+    endpoint,
+    platform: "bukkit",
+    serverPort: 41234,
+    serverDir: path.join(root, "manual-server"),
+    token: "manual-token",
+    lastSeenAt: "2026-05-26T00:00:00.000Z",
+    transports: [{ type: "file-mailbox", path: endpoint }]
+  }));
 
-  const connected = await manager.connectDebugAgent(server.id, code);
-  assert.equal(connected.debug_agent?.token, "manual-token");
-  assert.equal(connected.debug_agent?.mailbox_dir, endpoint);
-  assert.equal(connected.debug_agent?.endpoint_name, String(server.port));
+  const discovered = await manager.discoverDebugAgents();
+  assert.equal(discovered.length, 1);
+  assert.equal(discovered[0].endpoint_name, endpointName);
+  assert.equal(discovered[0].temporary, true);
+  assert.equal(discovered[0].deletable, false);
+
+  const registered = await manager.registerDiscoveredAgent(endpointName, "manual-agent-test");
+  assert.equal(registered.kind, "external");
+  assert.equal(registered.deletable, false);
+  assert.equal(registered.debug_agent?.token, "manual-token");
+  assert.equal(registered.debug_agent?.mailbox_dir, endpoint);
+
+  await assert.rejects(
+    () => manager.destroy(registered.id),
+    /cannot be destroyed/
+  );
 });
 
 test("ServerManager prefers tmux sessions and marks manually killed sessions stopped", { skip: process.platform === "win32" }, async () => {
@@ -315,10 +328,12 @@ test("ServerManager force kills a tracked server process", async () => {
 
 function testConfig(root: string): CraftRunnerConfig {
   return {
+    root_dir: path.join(root, "home"),
     cache_dir: path.join(root, "cache"),
+    agents_dir: path.join(root, "home", "agents"),
     server_base_dir: path.join(root, "servers-base"),
     state_dir: path.join(root, "state"),
-    user_agent: "craft-runner-test/0.1.0",
+    user_agent: "craft-runner-test/1.0.0",
     ports: {
       minecraft_start: 41000,
       minecraft_end: 41020,

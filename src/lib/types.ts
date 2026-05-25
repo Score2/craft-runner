@@ -73,10 +73,12 @@ export type JavaInfo = {
 
 export type ServerMetadata = {
   id: string;
-  kind: "local";
+  kind: "local" | "external";
   server_dir: string;
   base_dir: string;
   persistent: boolean;
+  managed?: boolean;
+  deletable?: boolean;
   core_ref: CoreRef;
   core_id: string;
   minecraft_version: string;
@@ -99,6 +101,7 @@ export type ServerMetadata = {
   debug_agent?: {
     token: string;
     mailbox_dir: string;
+    socket_path?: string;
     endpoint_name?: string;
     agent_jar: string;
     agent_jars?: string[];
@@ -157,7 +160,9 @@ export type CreateServerInput = {
 };
 
 export type CraftRunnerConfig = {
+  root_dir: string;
   cache_dir: string;
+  agents_dir: string;
   server_base_dir: string;
   state_dir: string;
   user_agent: string;

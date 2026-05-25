@@ -55,10 +55,9 @@ async function run(domain: string | undefined, action: string | undefined, args:
   if (domain === "debug" && action === "install-agent") {
     return manager.installDebugAgent(required(args[0], "server id"), await getAgentJar({ rebuild: args.includes("--rebuild") }));
   }
-  if (domain === "debug" && action === "connect-agent") {
-    return manager.connectDebugAgent(required(args[0], "server id"), required(args[1], "connect code"));
-  }
   if (domain === "debug" && action === "status") return manager.debugAgentStatus(required(args[0], "server id"));
+  if (domain === "debug" && action === "discover-agents") return manager.discoverDebugAgents();
+  if (domain === "debug" && action === "register-agent") return manager.registerDiscoveredAgent(required(args[0], "endpoint name"), valueAfter(args, "--id"));
   if (domain === "debug" && action === "js") {
     const code = valueAfter(args, "--code") ?? (valueAfter(args, "--file") ? await fs.readFile(required(valueAfter(args, "--file"), "js file"), "utf8") : undefined);
     return manager.debugEvalJs({
@@ -272,8 +271,9 @@ function usage(): string {
     "  craft-runner server wait-ready <id> [--timeout-ms <ms>]",
     "  craft-runner server command <id> <command>",
     "  craft-runner debug install-agent <server-id> [--rebuild]",
-    "  craft-runner debug connect-agent <server-id> <connect-code>",
     "  craft-runner debug status <server-id>",
+    "  craft-runner debug discover-agents",
+    "  craft-runner debug register-agent <endpoint-name> [--id <server-id>]",
     "  craft-runner debug js <server-id> (--code <js>|--file <file.js>) [--thread main|async]",
     "  craft-runner debug hot-capabilities <server-id>",
     "  craft-runner debug hot-list <server-id>",
@@ -501,13 +501,26 @@ function formatResult(domain: string | undefined, action: string | undefined, re
     return stringValue(result.response);
   }
 
-  if (domain === "debug" && ["install-agent", "connect-agent"].includes(action ?? "") && isRecord(result)) {
+  if (domain === "debug" && ["install-agent", "register-agent"].includes(action ?? "") && isRecord(result)) {
     return [
-      action === "connect-agent" ? "Debug agent connected." : "Debug agent installed.",
+      action === "register-agent" ? "Debug agent registered." : "Debug agent installed.",
       formatServer(result),
       "",
-      action === "connect-agent" ? "MCP can now use the registered file mailbox endpoint." : "Restart or start the server so the platform loads craft-runner-agent.jar."
+      action === "register-agent" ? "MCP can now use the discovered endpoint. Lifecycle/delete operations are not owned by craft-runner." : "Restart or start the server so the platform loads craft-runner-agent.jar."
     ].join("\n");
+  }
+
+  if (domain === "debug" && action === "discover-agents" && Array.isArray(result)) {
+    return result.length === 0 ? "No Craft Runner agents discovered." : table(
+      ["ENDPOINT", "PLATFORM", "PORT", "SOCKET", "MAILBOX"],
+      result.map((agent) => [
+        stringValue(agent.endpoint_name),
+        stringValue(agent.platform ?? "-"),
+        stringValue(agent.server_port ?? "-"),
+        agent.socket_exists ? "yes" : "no",
+        stringValue(agent.mailbox_dir)
+      ])
+    );
   }
 
   if (domain === "debug" && action === "status" && isRecord(result)) {
@@ -519,6 +532,8 @@ function formatResult(domain: string | undefined, action: string | undefined, re
       ["Agent jar", result.agent_jar],
       ["Agent jar exists", result.agent_jar_exists ? "yes" : "no"],
       ["All agent jars", Array.isArray(result.agent_jars) ? result.agent_jars.join(", ") : undefined],
+      ["Socket", result.socket_path],
+      ["Socket exists", result.socket_exists ? "yes" : "no"],
       ["Mailbox", result.mailbox_dir],
       ["Mailbox exists", result.mailbox_exists ? "yes" : "no"],
       ["Requests dir", result.requests_dir_exists ? "yes" : "no"],
@@ -757,7 +772,8 @@ _craft_runner() {
   )
   debug_commands=(
     'install-agent:install JS debug agent'
-    'connect-agent:register manually installed agent from connect code'
+    'discover-agents:scan ~/.craft-runner/agents for manual agents'
+    'register-agent:register a discovered manual agent'
     'status:show debug agent status'
     'js:execute JavaScript through the debug agent'
     'hot-capabilities:show hot plugin support'
@@ -893,11 +909,15 @@ _craft_runner() {
         return
       fi
       case "$words[3]" in
-        install-agent|connect-agent|status|hot-capabilities|hot-list)
+        install-agent|status|hot-capabilities|hot-list)
           if (( CURRENT == 4 )); then
             _craft_runner_server_ids
             return
           fi
+          ;;
+        register-agent)
+          _arguments '--id[server id for external agent]'
+          return
           ;;
         hot-load)
           if (( CURRENT == 4 )); then

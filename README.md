@@ -198,8 +198,10 @@ For npm Trusted Publishing, configure npm to trust:
 ## JS Debug Agent
 
 For plugin/mod capable servers, craft-runner can install a local debug agent.
-The agent uses GraalJS and communicates through files in the server directory,
-without opening another port. The same agent jar contains entrypoints for
+The agent uses GraalJS and communicates through a local endpoint under
+`~/.craft-runner/agents/<server-port>/`, without opening another TCP port.
+On Linux/macOS it prefers a Unix domain socket and falls back to file mailbox
+requests; on Windows it uses the file mailbox transport. The same agent jar contains entrypoints for
 Bukkit-family servers, BungeeCord/Waterfall, Velocity, Fabric, Forge, and
 NeoForge. Vanilla servers do not have a plugin/mod loading mechanism, so they
 cannot load this agent directly.
@@ -208,7 +210,8 @@ cannot load this agent directly.
 craftr debug install-agent test-paper
 craftr server restart test-paper
 craftr debug status test-paper
-craftr debug connect-agent test-paper <connect-code-from-craftragent>
+craftr debug discover-agents
+craftr debug register-agent 25565 --id manual-test-paper
 craftr debug js test-paper --code "cr.platform.onlinePlayerNames()"
 craftr debug hot-capabilities test-paper
 craftr debug hot-load test-paper ./build/libs/MyPlugin.jar
@@ -226,10 +229,11 @@ Gradle. `debug_install_agent` with `rebuild: true` requires Gradle on `PATH`.
 Mailbox path:
 
 ```text
-<server_dir>/.craft-runner-agent/
+~/.craft-runner/agents/
   <server-port>/
     config.json
     endpoint.json
+    agent.sock
     requests/
     responses/
     tmp/
@@ -239,23 +243,25 @@ Mailbox path:
 The endpoint directory is named after the Minecraft server port so MCP, local
 tools, and future remote runners can identify a manually installed agent without
 craft-runner metadata. Each endpoint gets a unique token in `config.json`; the
-agent ignores requests with a mismatched token. Legacy
-`.craft-runner-agent/config.json` endpoints are still accepted.
+agent ignores requests with a mismatched token.
 
 Users may also install `craft-runner-agent.jar` manually. On Bukkit-family,
 BungeeCord/Waterfall, and Velocity servers, `/craftragent status` shows the
-endpoint, `/craftragent token` prints the local token, and `/craftragent connect`
-prints a URL-safe base64 JSON payload containing local host candidates, server
-port, endpoint path, and token. The command is registered through Incendo Cloud
-so the command behavior is shared across those platforms. `/cra` is available
-as the short in-server alias. `list`, `hot-load`, `hot-unload`, and `hot-reload`
-are available from the same command, but hot plugin operations currently only
-perform real load/unload work on Bukkit-family servers.
+endpoint and `/craftragent token` prints the local token. The command is
+registered through Incendo Cloud so the command behavior is shared across those
+platforms. `/cra` is available as the short in-server alias. `list`,
+`hot-load`, `hot-unload`, and `hot-reload` are available from the same command,
+but hot plugin operations currently only perform real load/unload work on
+Bukkit-family, BungeeCord/Waterfall, and Velocity servers.
 
-To let MCP use a manually installed agent, register that connect code:
+To let MCP use a manually installed agent, scan the local endpoints and register
+the matching port. Discovered/manual agents are treated as temporary external
+servers: craft-runner can use their debug endpoint, but cannot destroy or own
+their lifecycle.
 
 ```sh
-craftr debug connect-agent test-paper <connect-code>
+craftr debug discover-agents
+craftr debug register-agent 25565 --id manual-test-paper
 ```
 
 Debug scripts should prefer the `cr` DSL over raw Java globals:

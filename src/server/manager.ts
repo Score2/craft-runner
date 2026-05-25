@@ -3,6 +3,7 @@ import fsSync from "node:fs";
 import path from "node:path";
 import { execFile, spawn } from "node:child_process";
 import crypto from "node:crypto";
+import net from "node:net";
 import { promisify } from "node:util";
 import { CoreCache } from "../core/cache.js";
 import { resolveCore } from "../core/providers.js";
@@ -46,6 +47,7 @@ export class ServerManager {
   async init(): Promise<void> {
     await this.store.init();
     await this.coreCache.init();
+    await ensureDir(this.config.agents_dir);
   }
 
   async create(input: CreateServerInput): Promise<ServerMetadata> {
@@ -84,6 +86,8 @@ export class ServerManager {
       server_dir: serverDir,
       base_dir: baseDir,
       persistent: input.persistent ?? Boolean(input.base_dir),
+      managed: true,
+      deletable: true,
       core_ref: input.core_ref,
       core_id: core.id,
       minecraft_version: core.minecraft_version,
@@ -151,8 +155,10 @@ export class ServerManager {
     return {
       generated_at: new Date().toISOString(),
       paths: {
+        root_dir: this.config.root_dir,
         cache_dir: this.config.cache_dir,
         core_cache_dir: this.coreCache.coresDir,
+        agents_dir: this.config.agents_dir,
         server_base_dir: this.config.server_base_dir,
         state_dir: this.config.state_dir
       },
@@ -292,6 +298,9 @@ export class ServerManager {
 
   async destroy(id: string, deleteFiles = true): Promise<{ id: string; deleted_files: boolean }> {
     const server = await this.get(id);
+    if (server.kind === "external" || server.deletable === false) {
+      throw new Error(`server ${id} was discovered from a manually installed agent and cannot be destroyed by craft-runner`);
+    }
     if (server.status === "running" || server.status === "starting") {
       await this.stop(id);
     }
@@ -409,11 +418,103 @@ export class ServerManager {
     return { response: "", transport: "console_stdin" };
   }
 
+  async discoverDebugAgents(): Promise<Array<Record<string, unknown>>> {
+    await this.init();
+    if (!(await pathExists(this.config.agents_dir))) {
+      return [];
+    }
+    const result: Array<Record<string, unknown>> = [];
+    for (const entry of await fs.readdir(this.config.agents_dir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+      const endpointDir = path.join(this.config.agents_dir, entry.name);
+      const endpoint = await readJson<Record<string, unknown> | undefined>(path.join(endpointDir, "endpoint.json"), undefined);
+      const config = await readJson<Record<string, unknown> | undefined>(path.join(endpointDir, "config.json"), undefined);
+      const token = typeof endpoint?.token === "string" ? endpoint.token : config?.token;
+      if (typeof token !== "string" || token === "") {
+        continue;
+      }
+      const socketPath = typeof endpoint?.socket === "string" ? endpoint.socket : (process.platform === "win32" ? undefined : path.join(endpointDir, "agent.sock"));
+      result.push({
+        id: `agent-${entry.name}`,
+        endpoint_name: entry.name,
+        endpoint: endpointDir,
+        mailbox_dir: endpointDir,
+        socket_path: socketPath,
+        socket_exists: socketPath ? await pathExists(socketPath) : false,
+        token,
+        platform: endpoint?.platform,
+        server_port: endpoint?.serverPort ? Number(endpoint.serverPort) : Number(entry.name),
+        server_dir: endpoint?.serverDir,
+        last_seen_at: endpoint?.lastSeenAt,
+        transports: endpoint?.transports ?? [
+          ...(socketPath ? [{ type: "unix-socket", path: socketPath }] : []),
+          { type: "file-mailbox", path: endpointDir }
+        ],
+        temporary: true,
+        deletable: false
+      });
+    }
+    return result.sort((a, b) => String(a.endpoint_name).localeCompare(String(b.endpoint_name)));
+  }
+
+  async registerDiscoveredAgent(endpointName: string, id?: string): Promise<ServerMetadata> {
+    const agents = await this.discoverDebugAgents();
+    const agent = agents.find((item) => item.endpoint_name === endpointName || item.id === endpointName);
+    if (!agent) {
+      throw new Error(`discovered agent not found: ${endpointName}`);
+    }
+    const serverId = id ?? String(agent.id);
+    validateServerId(serverId);
+    const now = new Date().toISOString();
+    const port = Number(agent.server_port);
+    const serverDir = typeof agent.server_dir === "string" ? agent.server_dir : String(agent.endpoint);
+    const server: ServerMetadata = {
+      id: serverId,
+      kind: "external",
+      server_dir: serverDir,
+      base_dir: this.config.root_dir,
+      persistent: false,
+      managed: false,
+      deletable: false,
+      core_ref: { loader: "external", minecraft_version: "unknown" },
+      core_id: "external",
+      minecraft_version: "unknown",
+      loader: typeof agent.platform === "string" ? agent.platform : "external",
+      host: "127.0.0.1",
+      port: Number.isFinite(port) ? port : 0,
+      java_args: [],
+      memory: { xms: "", xmx: "" },
+      status: "running",
+      created_at: now,
+      updated_at: now,
+      debug_agent: {
+        token: String(agent.token),
+        mailbox_dir: String(agent.mailbox_dir),
+        socket_path: typeof agent.socket_path === "string" ? agent.socket_path : undefined,
+        endpoint_name: String(agent.endpoint_name),
+        agent_jar: "",
+        agent_jars: [],
+        installed_at: now
+      },
+      events: []
+    };
+    addEvent(server, "debug_agent_discovered", "Registered manually installed Craft Runner agent", {
+      endpoint_name: agent.endpoint_name,
+      mailbox_dir: agent.mailbox_dir,
+      socket_path: agent.socket_path
+    });
+    await this.store.saveServer(server);
+    return server;
+  }
+
   async installDebugAgent(id: string, agentJarPath: string): Promise<ServerMetadata> {
     const server = await this.get(id);
     const token = server.debug_agent?.token ?? randomId("debug");
     const endpointName = String(server.port);
-    const mailboxDir = path.join(server.server_dir, ".craft-runner-agent", endpointName);
+    const mailboxDir = this.agentEndpointDir(endpointName);
+    const socketPath = process.platform === "win32" ? undefined : path.join(mailboxDir, "agent.sock");
     await ensureDir(path.join(mailboxDir, "requests"));
     await ensureDir(path.join(mailboxDir, "responses"));
     await ensureDir(path.join(mailboxDir, "tmp"));
@@ -430,6 +531,7 @@ export class ServerManager {
     server.debug_agent = {
       token,
       mailbox_dir: mailboxDir,
+      socket_path: socketPath,
       endpoint_name: endpointName,
       agent_jar: targetJars[0],
       agent_jars: targetJars,
@@ -443,49 +545,27 @@ export class ServerManager {
   async debugAgentStatus(id: string): Promise<Record<string, unknown>> {
     const server = await this.get(id);
     const endpointName = server.debug_agent?.endpoint_name ?? String(server.port);
-    const mailboxDir = server.debug_agent?.mailbox_dir ?? path.join(server.server_dir, ".craft-runner-agent", endpointName);
+    const mailboxDir = server.debug_agent?.mailbox_dir ?? this.agentEndpointDir(endpointName);
+    const socketPath = server.debug_agent?.socket_path ?? (process.platform === "win32" ? undefined : path.join(mailboxDir, "agent.sock"));
     const agentJars = server.debug_agent?.agent_jars ?? (server.debug_agent?.agent_jar ? [server.debug_agent.agent_jar] : debugAgentTargets(server));
     return {
       server_id: server.id,
       configured: Boolean(server.debug_agent?.token),
       endpoint_name: endpointName,
       mailbox_dir: mailboxDir,
+      socket_path: socketPath,
       endpoint_file: path.join(mailboxDir, "endpoint.json"),
       mailbox_exists: await pathExists(mailboxDir),
+      socket_exists: socketPath ? await pathExists(socketPath) : false,
       agent_jar: agentJars[0],
       agent_jars: agentJars,
-      agent_jar_exists: await pathExists(agentJars[0]),
+      agent_jar_exists: agentJars[0] ? await pathExists(agentJars[0]) : false,
       agent_jars_existing: await existingPaths(agentJars),
       requests_dir_exists: await pathExists(path.join(mailboxDir, "requests")),
       responses_dir_exists: await pathExists(path.join(mailboxDir, "responses")),
       endpoint_file_exists: await pathExists(path.join(mailboxDir, "endpoint.json")),
       installed_at: server.debug_agent?.installed_at
     };
-  }
-
-  async connectDebugAgent(id: string, connectCode: string): Promise<ServerMetadata> {
-    const server = await this.get(id);
-    const payload = decodeAgentConnectCode(connectCode);
-    const token = requiredString(payload.token, "token");
-    const mailboxDir = requiredString(payload.endpoint, "endpoint");
-    const endpointName = typeof payload.endpointName === "string"
-      ? payload.endpointName
-      : String(payload.serverPort ?? server.port);
-    const agentJars = debugAgentTargets(server);
-    server.debug_agent = {
-      token,
-      mailbox_dir: mailboxDir,
-      endpoint_name: endpointName,
-      agent_jar: agentJars[0],
-      agent_jars: agentJars,
-      installed_at: new Date().toISOString()
-    };
-    addEvent(server, "debug_agent_connected", "Connected to manually installed Craft Runner debug agent", {
-      mailbox_dir: mailboxDir,
-      endpoint_name: endpointName
-    });
-    await this.store.saveServer(server);
-    return server;
   }
 
   async debugEvalJs(input: DebugEvalInput): Promise<unknown> {
@@ -535,6 +615,25 @@ export class ServerManager {
       ...body
     };
 
+    if (server.debug_agent.socket_path && await pathExists(server.debug_agent.socket_path)) {
+      try {
+        const response = await sendAgentSocketRequest(server.debug_agent.socket_path, request, timeoutMs);
+        addEvent(server, eventType, eventMessage, {
+          request_id: requestId,
+          ok: isRecord(response) ? response.ok : undefined,
+          transport: "unix-socket"
+        });
+        await this.store.saveServer(server);
+        return response;
+      } catch (error) {
+        addEvent(server, "agent_socket_failed", "Unix socket debug transport failed; falling back to file mailbox", {
+          request_id: requestId,
+          socket_path: server.debug_agent.socket_path,
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+    }
+
     await ensureDir(path.join(mailboxDir, "requests"));
     await ensureDir(path.join(mailboxDir, "responses"));
     await ensureDir(path.join(mailboxDir, "tmp"));
@@ -550,7 +649,8 @@ export class ServerManager {
         const response = await readJson<Record<string, unknown>>(responseFile, {});
         addEvent(server, eventType, eventMessage, {
           request_id: requestId,
-          ok: response.ok
+          ok: response.ok,
+          transport: "file-mailbox"
         });
         await this.store.saveServer(server);
         return response;
@@ -581,6 +681,10 @@ export class ServerManager {
     return path.join(server.base_dir, "servers", server.id, "logs", "craft-runner-stdout.log");
   }
 
+  private agentEndpointDir(endpointName: string): string {
+    return path.join(this.config.agents_dir, endpointName);
+  }
+
   private async resolveLogFile(server: ServerMetadata, file?: string): Promise<string> {
     if (file) {
       return resolveInside(server.server_dir, file);
@@ -592,6 +696,19 @@ export class ServerManager {
 
   private async refreshStatus(server: ServerMetadata): Promise<ServerMetadata> {
     if (!["running", "starting", "stopping"].includes(server.status)) {
+      return server;
+    }
+    if (server.kind === "external") {
+      const alive = Boolean(
+        (server.debug_agent?.socket_path && await pathExists(server.debug_agent.socket_path)) ||
+        (server.debug_agent?.mailbox_dir && await pathExists(path.join(server.debug_agent.mailbox_dir, "endpoint.json")))
+      );
+      if (!alive) {
+        server.status = "stopped";
+        server.updated_at = new Date().toISOString();
+        addEvent(server, "agent_endpoint_missing", "Discovered agent endpoint is no longer visible");
+        await this.store.saveServer(server);
+      }
       return server;
     }
     const running = await isServerProcessRunning(server);
@@ -914,24 +1031,37 @@ function isProcessAlive(pid: number): boolean {
   }
 }
 
-function decodeAgentConnectCode(connectCode: string): Record<string, any> {
-  try {
-    const padded = connectCode.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(connectCode.length / 4) * 4, "=");
-    const payload = JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
-    if (!payload || payload.schema !== "craft-runner-agent-connect") {
-      throw new Error("invalid schema");
-    }
-    return payload;
-  } catch (error) {
-    throw new Error(`invalid craft-runner agent connect code: ${error instanceof Error ? error.message : String(error)}`);
-  }
+async function sendAgentSocketRequest(socketPath: string, request: Record<string, unknown>, timeoutMs: number): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    const socket = net.createConnection(socketPath);
+    const timer = setTimeout(() => {
+      socket.destroy();
+      reject(new Error(`debug agent socket response timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+    socket.on("connect", () => {
+      socket.end(`${JSON.stringify(request)}\n`);
+    });
+    socket.on("data", (chunk) => {
+      chunks.push(Buffer.from(chunk));
+    });
+    socket.on("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    socket.on("end", () => {
+      clearTimeout(timer);
+      try {
+        resolve(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+      } catch (error) {
+        reject(error);
+      }
+    });
+  });
 }
 
-function requiredString(value: unknown, name: string): string {
-  if (typeof value !== "string" || value.trim() === "") {
-    throw new Error(`connect code is missing ${name}`);
-  }
-  return value;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 async function sleep(ms: number): Promise<void> {

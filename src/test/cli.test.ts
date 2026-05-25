@@ -19,7 +19,8 @@ test("CLI help prints real newlines", async () => {
   assert.match(result.stdout, /craft-runner server create --id <id>/);
   assert.match(result.stdout, /craft-runner server logs <id>/);
   assert.match(result.stdout, /craft-runner server kill <id>/);
-  assert.match(result.stdout, /craft-runner debug connect-agent <server-id> <connect-code>/);
+  assert.match(result.stdout, /craft-runner debug discover-agents/);
+  assert.match(result.stdout, /craft-runner debug register-agent <endpoint-name>/);
   assert.equal(result.stdout.includes("craft-runner env"), false);
   assert.equal(result.stdout.includes("\\n"), false);
 });
@@ -60,6 +61,7 @@ test("CLI can create a test server with a custom jar", async () => {
   await fs.writeFile(jar, "fake jar");
   const testEnv = {
     ...process.env,
+    CRAFT_RUNNER_HOME: path.join(root, "home"),
     CRAFT_RUNNER_CACHE_DIR: path.join(root, "cache"),
     CRAFT_RUNNER_SERVER_BASE_DIR: path.join(root, "servers"),
     CRAFT_RUNNER_STATE_DIR: path.join(root, "state")

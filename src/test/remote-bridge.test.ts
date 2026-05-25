@@ -25,7 +25,7 @@ test("RemoteBridge uses non-interactive SSH and sends bridge JSON", async () => 
 
     assert.deepEqual(result.remote, {
       host: "lab-linux",
-      craftr_version: "0.1.0",
+      craftr_version: "1.0.0",
       bridge_protocol: { major: 1, minor: 0 }
     });
     assert.deepEqual(result.result, {
@@ -82,7 +82,7 @@ async function writeFakeSsh(target: string, calls: string): Promise<void> {
     "  fs.appendFileSync(calls, JSON.stringify({ args, port, target, command, input }) + '\\n');",
     "  if (command[0] === 'true') process.exit(0);",
     "  if (command.join(' ') === 'craftr bridge version') {",
-    "    console.log(JSON.stringify({ name: '@score2/craft-runner', version: '0.1.0', bridge_protocol: { major: 1, minor: 0 }, capabilities: [] }));",
+    "    console.log(JSON.stringify({ name: '@score2/craft-runner', version: '1.0.0', bridge_protocol: { major: 1, minor: 0 }, capabilities: [] }));",
     "    process.exit(0);",
     "  }",
     "  if (command.join(' ') === 'craftr bridge request') {",

@@ -3,6 +3,7 @@ package io.insinuate.score2.craftrunner.agent.common.runtime;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import io.insinuate.score2.craftrunner.agent.common.mailbox.FileMailbox;
+import io.insinuate.score2.craftrunner.agent.common.mailbox.UnixSocketMailbox;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -16,21 +17,23 @@ public final class AgentRuntime {
     private final Gson gson = new GsonBuilder().disableHtmlEscaping().setPrettyPrinting().create();
     private ScheduledExecutorService scheduler;
     private AgentEndpointInfo endpointInfo;
+    private UnixSocketMailbox unixSocketMailbox;
 
     public AgentRuntime(AgentPlatform platform) {
         this.platform = platform;
     }
 
     public void enable() {
-        Path root = Path.of("").toAbsolutePath().resolve(".craft-runner-agent");
+        Path root = agentsRoot();
         try {
             Files.createDirectories(root);
             LoadedConfig loaded = loadOrCreateConfig(root);
             AgentConfig config = loaded.config();
             Path endpoint = loaded.endpoint();
             String endpointName = loaded.endpointName();
+            Path socket = UnixSocketMailbox.supported() ? endpoint.resolve("agent.sock") : null;
 
-            scheduler = Executors.newScheduledThreadPool(2, runnable -> {
+            scheduler = Executors.newScheduledThreadPool(3, runnable -> {
                 Thread thread = new Thread(runnable, "craft-runner-agent-" + platform.platformName());
                 thread.setDaemon(true);
                 return thread;
@@ -38,15 +41,24 @@ public final class AgentRuntime {
             FileMailbox mailbox = new FileMailbox(platform, config, endpoint, scheduler);
             mailbox.ensureDirectories();
             scheduler.scheduleWithFixedDelay(mailbox, 0L, Math.max(50L, config.pollIntervalMs()), TimeUnit.MILLISECONDS);
-            endpointInfo = new AgentEndpointInfo(root, endpoint, endpointName, config.token(), loaded.generated(), true);
+            if (socket != null) {
+                unixSocketMailbox = new UnixSocketMailbox(platform, config, socket, scheduler);
+                scheduler.submit(unixSocketMailbox);
+            }
+            endpointInfo = new AgentEndpointInfo(root, endpoint, socket, endpointName, platform.platformName(), platform.serverPort(), Path.of("").toAbsolutePath(), config.token(), loaded.generated(), true);
             writeEndpointInfo(root, endpoint, endpointInfo);
-            platform.logger().info("Craft Runner debug mailbox enabled for " + platform.platformName() + " at " + endpoint);
+            scheduler.scheduleWithFixedDelay(() -> writeEndpointInfoQuietly(root, endpoint, endpointInfo), 2L, 2L, TimeUnit.SECONDS);
+            platform.logger().info("Craft Runner debug endpoint enabled for " + platform.platformName() + " at " + endpoint);
         } catch (Exception error) {
-            platform.logger().severe("Failed to enable Craft Runner debug mailbox: " + error);
+            platform.logger().severe("Failed to enable Craft Runner debug endpoint: " + error);
         }
     }
 
     public void disable() {
+        if (unixSocketMailbox != null) {
+            unixSocketMailbox.stop();
+            unixSocketMailbox = null;
+        }
         if (scheduler != null) {
             scheduler.shutdownNow();
             scheduler = null;
@@ -57,9 +69,11 @@ public final class AgentRuntime {
         if (endpointInfo != null) {
             return endpointInfo;
         }
-        Path root = Path.of("").toAbsolutePath().resolve(".craft-runner-agent");
+        Path root = agentsRoot();
         String endpointName = defaultEndpointName();
-        return new AgentEndpointInfo(root, root.resolve(endpointName), endpointName, "", false, false);
+        Path endpoint = root.resolve(endpointName);
+        Path socket = UnixSocketMailbox.supported() ? endpoint.resolve("agent.sock") : null;
+        return new AgentEndpointInfo(root, endpoint, socket, endpointName, platform.platformName(), platform.serverPort(), Path.of("").toAbsolutePath(), "", false, false);
     }
 
     private LoadedConfig loadOrCreateConfig(Path root) throws Exception {
@@ -136,12 +150,23 @@ public final class AgentRuntime {
         return port > 0 ? String.valueOf(port) : platform.platformName();
     }
 
+    private Path agentsRoot() {
+        return Path.of(System.getProperty("user.home"), ".craft-runner", "agents");
+    }
+
     private void writeEndpointInfo(Path root, Path endpoint, AgentEndpointInfo info) throws Exception {
         Files.createDirectories(root);
         Files.createDirectories(endpoint);
         String body = gson.toJson(info.asMap()) + "\n";
         Files.writeString(endpoint.resolve("endpoint.json"), body, StandardCharsets.UTF_8);
         Files.writeString(root.resolve("current.json"), body, StandardCharsets.UTF_8);
+    }
+
+    private void writeEndpointInfoQuietly(Path root, Path endpoint, AgentEndpointInfo info) {
+        try {
+            writeEndpointInfo(root, endpoint, info);
+        } catch (Exception ignored) {
+        }
     }
 
     private record LoadedConfig(Path endpoint, String endpointName, AgentConfig config, boolean generated) {

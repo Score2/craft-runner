@@ -6,7 +6,6 @@ final class AgentHelpCommand {
         context.send(sender, "Aliases: " + AgentCommandContext.YELLOW + "/craftragent" + AgentCommandContext.GRAY + ", " + AgentCommandContext.YELLOW + "/cra");
         context.send(sender, AgentCommandContext.YELLOW + "/" + label + " status");
         context.send(sender, AgentCommandContext.YELLOW + "/" + label + " token");
-        context.send(sender, AgentCommandContext.YELLOW + "/" + label + " connect");
         context.send(sender, AgentCommandContext.YELLOW + "/" + label + " list");
         context.send(sender, AgentCommandContext.YELLOW + "/" + label + " load <plugin.jar|plugin-name> [--no-enable]");
         context.send(sender, AgentCommandContext.YELLOW + "/" + label + " unload <plugin>");
