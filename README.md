@@ -145,7 +145,9 @@ for routine shutdowns.
 
 GitHub Actions runs regression tests on pushes and pull requests. npm publishing
 is intentionally gated: the publish workflow runs only when manually dispatched
-or when the pushed commit message contains `[npm publish]`.
+or when the pushed commit message contains `[npm publish]`. The same workflow
+also creates or updates the matching GitHub Release (`v<package version>`) and
+attaches `craft-runner-agent-<version>.jar` for manual server installation.
 
 For npm Trusted Publishing, configure npm to trust:
 
