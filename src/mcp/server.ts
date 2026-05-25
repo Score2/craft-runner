@@ -65,7 +65,7 @@ export function createMcpServer(manager = new ServerManager()): McpServer {
     server_id: z.string()
   }, (args) => manager.get(args.server_id));
 
-  tool("start_server", "Start a local server in the background.", {
+  tool("start_server", "Start a local server. Uses a managed tmux session when tmux is available, with detached background process fallback.", {
     server_id: z.string()
   }, (args) => manager.start(args.server_id));
 
@@ -182,7 +182,7 @@ export function createMcpServer(manager = new ServerManager()): McpServer {
     timeout_ms: z.number().int().optional()
   }, (args) => manager.waitReady(args.server_id, args.timeout_ms));
 
-  tool("send_server_command", "Send a command through RCON.", {
+  tool("send_server_command", "Send a command through RCON when enabled, otherwise through craft-runner's managed console stdin for tmux-launched servers.", {
     server_id: z.string(),
     command: z.string()
   }, (args) => manager.sendCommand(args.server_id, args.command));

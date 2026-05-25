@@ -176,6 +176,112 @@ test("ServerManager registers manually installed agent connect codes", async () 
   assert.equal(connected.debug_agent?.endpoint_name, String(server.port));
 });
 
+test("ServerManager prefers tmux sessions and marks manually killed sessions stopped", { skip: process.platform === "win32" }, async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "craft-runner-tmux-test-"));
+  const fakeCore = path.join(root, "fake-server.jar");
+  const fakeJava = path.join(root, "fake-java");
+  const fakeBin = path.join(root, "bin");
+  const fakeTmux = path.join(fakeBin, "tmux");
+  const tmuxState = path.join(root, "tmux-state");
+  await fs.writeFile(fakeCore, "fake jar");
+  await fs.mkdir(fakeBin, { recursive: true });
+  await writeFakeJava(fakeJava);
+  await writeFakeTmux(fakeTmux);
+
+  const previousPath = process.env.PATH;
+  const previousTmuxState = process.env.CRAFT_FAKE_TMUX_STATE;
+  process.env.PATH = fakeBin;
+  process.env.CRAFT_FAKE_TMUX_STATE = tmuxState;
+  try {
+    const manager = new ServerManager(testConfig(root));
+    const server = await manager.create({
+      id: "tmux-test",
+      java_ref: `path:${fakeJava}`,
+      core_ref: {
+        loader: "custom",
+        minecraft_version: "1.20.4",
+        path: fakeCore
+      }
+    });
+
+    const started = await manager.start(server.id);
+    assert.equal(started.launch_backend, "tmux");
+    assert.match(started.tmux_session ?? "", /^craft_runner_/);
+    assert.match(started.console_stdin_path ?? "", /\.craft-runner\/console\.stdin$/);
+    assert.equal((await manager.get(server.id)).status, "running");
+
+    const command = await fs.readFile(path.join(tmuxState, `${started.tmux_session}.cmd`), "utf8");
+    assert.match(command, /nogui/);
+    assert.match(command, /cat .*console\.stdin/);
+    assert.match(command, /CRAFT_RUNNER_SERVER_ID/);
+
+    const stopLine = readFirstLine(started.console_stdin_path!);
+    const gracefullyStopped = await manager.stop(server.id, 100);
+    assert.equal(await stopLine, "stop");
+    assert.equal(gracefullyStopped.status, "stopped");
+
+    const calls = await fs.readFile(path.join(tmuxState, "calls.log"), "utf8");
+    assert.doesNotMatch(calls, /send-keys/);
+
+    const restarted = await manager.start(server.id);
+    await fs.rm(path.join(tmuxState, restarted.tmux_session!), { force: true });
+    const stopped = await manager.get(server.id);
+    assert.equal(stopped.status, "stopped");
+    assert.equal(stopped.pid, undefined);
+    assert.equal(stopped.events.some((event) => event.type === "process_exit_detected"), true);
+  } finally {
+    process.env.PATH = previousPath;
+    if (previousTmuxState === undefined) {
+      delete process.env.CRAFT_FAKE_TMUX_STATE;
+    } else {
+      process.env.CRAFT_FAKE_TMUX_STATE = previousTmuxState;
+    }
+  }
+});
+
+test("ServerManager falls back to detached background process when tmux is unavailable", { skip: process.platform === "win32" }, async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "craft-runner-background-test-"));
+  const fakeCore = path.join(root, "fake-server.jar");
+  const fakeJava = path.join(root, "fake-java");
+  const javaArgsFile = path.join(root, "java-args.json");
+  await fs.writeFile(fakeCore, "fake jar");
+  await writeFakeJava(fakeJava);
+
+  const previousPath = process.env.PATH;
+  const previousArgsFile = process.env.CRAFT_FAKE_JAVA_ARGS;
+  process.env.PATH = path.join(root, "empty-bin");
+  process.env.CRAFT_FAKE_JAVA_ARGS = javaArgsFile;
+  try {
+    const manager = new ServerManager(testConfig(root));
+    const server = await manager.create({
+      id: "background-test",
+      java_ref: `path:${fakeJava}`,
+      core_ref: {
+        loader: "custom",
+        minecraft_version: "1.20.4",
+        path: fakeCore
+      }
+    });
+
+    const started = await manager.start(server.id);
+    assert.equal(started.launch_backend, "background");
+    assert.equal(typeof started.pid, "number");
+    const args = JSON.parse(await waitForFile(javaArgsFile)) as string[];
+    assert.equal(args.includes("nogui"), true);
+
+    const stopped = await manager.stop(server.id, 3000);
+    assert.equal(stopped.status, "stopped");
+    assert.equal(stopped.pid, undefined);
+  } finally {
+    process.env.PATH = previousPath;
+    if (previousArgsFile === undefined) {
+      delete process.env.CRAFT_FAKE_JAVA_ARGS;
+    } else {
+      process.env.CRAFT_FAKE_JAVA_ARGS = previousArgsFile;
+    }
+  }
+});
+
 test("ServerManager force kills a tracked server process", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "craft-runner-kill-test-"));
   const fakeCore = path.join(root, "fake-server.jar");
@@ -255,6 +361,70 @@ async function respondToFirstDebugRequest(
   }
 
   throw new Error("debug request file was not written");
+}
+
+async function writeFakeJava(target: string): Promise<void> {
+  await fs.writeFile(target, [
+    `#!${process.execPath}`,
+    "const fs = require('fs');",
+    "const args = process.argv.slice(2);",
+    "if (args.includes('-version')) {",
+    "  process.stderr.write('openjdk version \"21.0.1\"\\n');",
+    "  process.exit(0);",
+    "}",
+    "if (process.env.CRAFT_FAKE_JAVA_ARGS) {",
+    "  fs.writeFileSync(process.env.CRAFT_FAKE_JAVA_ARGS, JSON.stringify(args));",
+    "}",
+    "process.on('SIGTERM', () => process.exit(0));",
+    "process.on('SIGINT', () => process.exit(0));",
+    "setInterval(() => {}, 1000);"
+  ].join("\n"));
+  await fs.chmod(target, 0o755);
+}
+
+async function writeFakeTmux(target: string): Promise<void> {
+  await fs.writeFile(target, [
+    `#!${process.execPath}`,
+    "const fs = require('fs');",
+    "const path = require('path');",
+    "const args = process.argv.slice(2);",
+    "const state = process.env.CRAFT_FAKE_TMUX_STATE;",
+    "fs.mkdirSync(state, { recursive: true });",
+    "fs.appendFileSync(path.join(state, 'calls.log'), JSON.stringify(args) + '\\n');",
+    "function valueAfter(flag) { const index = args.indexOf(flag); return index === -1 ? '' : args[index + 1]; }",
+    "if (args[0] === '-V') { console.log('tmux 3.4'); process.exit(0); }",
+    "if (args[0] === 'has-session') { process.exit(fs.existsSync(path.join(state, valueAfter('-t'))) ? 0 : 1); }",
+    "if (args[0] === 'new-session') {",
+    "  const session = valueAfter('-s');",
+    "  fs.writeFileSync(path.join(state, session), 'running');",
+    "  fs.writeFileSync(path.join(state, session + '.cmd'), args[args.length - 1]);",
+    "  process.exit(0);",
+    "}",
+    "if (args[0] === 'display-message') { console.log('424242'); process.exit(0); }",
+    "if (args[0] === 'kill-session') { fs.rmSync(path.join(state, valueAfter('-t')), { force: true }); process.exit(0); }",
+    "process.exit(1);"
+  ].join("\n"));
+  await fs.chmod(target, 0o755);
+}
+
+async function readFirstLine(file: string): Promise<string> {
+  const content = await fs.readFile(file, "utf8");
+  return content.split(/\r?\n/)[0];
+}
+
+async function waitForFile(file: string): Promise<string> {
+  const deadline = Date.now() + 3000;
+  while (Date.now() <= deadline) {
+    try {
+      return await fs.readFile(file, "utf8");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw error;
+      }
+      await sleep(25);
+    }
+  }
+  throw new Error(`file was not written: ${file}`);
 }
 
 async function sleep(ms: number): Promise<void> {

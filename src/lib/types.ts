@@ -6,6 +6,8 @@ export type ServerStatus =
   | "stopped"
   | "failed";
 
+export type ServerLaunchBackend = "tmux" | "background";
+
 export type CoreKind = "jar" | "installer";
 
 export type CoreRef = {
@@ -91,6 +93,9 @@ export type ServerMetadata = {
     xmx: string;
   };
   pid?: number;
+  launch_backend?: ServerLaunchBackend;
+  tmux_session?: string;
+  console_stdin_path?: string;
   debug_agent?: {
     token: string;
     mailbox_dir: string;
