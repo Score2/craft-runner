@@ -56,7 +56,7 @@ export class RemoteBridge {
 
   private async assertSshReady(): Promise<void> {
     try {
-      await this.ssh(["true"], undefined, 10000);
+      await this.ssh(["echo", "craft-runner-ssh-ok"], undefined, 10000);
     } catch (error) {
       throw new Error(`remote ${this.remoteHost} is not reachable through non-interactive SSH. Ensure ~/.ssh/config or the target string works with key-based login and no password prompts. ${error instanceof Error ? error.message : String(error)}`);
     }

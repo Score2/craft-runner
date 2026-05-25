@@ -80,7 +80,7 @@ async function writeFakeSsh(target: string, calls: string): Promise<void> {
     "process.stdin.on('data', chunk => input += chunk);",
     "process.stdin.on('end', () => {",
     "  fs.appendFileSync(calls, JSON.stringify({ args, port, target, command, input }) + '\\n');",
-    "  if (command[0] === 'true') process.exit(0);",
+    "  if (command.join(' ') === 'echo craft-runner-ssh-ok') { console.log('craft-runner-ssh-ok'); process.exit(0); }",
     "  if (command.join(' ') === 'craftr bridge version') {",
     "    console.log(JSON.stringify({ name: '@score2/craft-runner', version: '1.0.0', bridge_protocol: { major: 1, minor: 0 }, capabilities: [] }));",
     "    process.exit(0);",
