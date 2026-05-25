@@ -122,7 +122,9 @@ export class RemoteBridge {
 }
 
 async function runSsh(remoteHost: string, command: string[], stdin?: string, timeoutMs = 30000): Promise<{ stdout: string; stderr: string }> {
+  const prefixArgs = sshPrefixArgs();
   const args = [
+    ...prefixArgs,
     "-o", "BatchMode=yes",
     "-o", "NumberOfPasswordPrompts=0",
     ...sshTargetArgs(remoteHost),
@@ -155,6 +157,19 @@ async function runSsh(remoteHost: string, command: string[], stdin?: string, tim
     throw new Error(`ssh exited with ${exitCode}; stderr: ${stderr.trim()}. ${installHint(remoteHost)}`);
   }
   return { stdout, stderr };
+}
+
+function sshPrefixArgs(): string[] {
+  const raw = process.env.CRAFT_RUNNER_SSH_PREFIX_ARGS;
+  if (!raw) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
 }
 
 function sshTargetArgs(remoteHost: string): string[] {
