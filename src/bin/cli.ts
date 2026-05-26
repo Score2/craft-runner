@@ -644,6 +644,15 @@ function formatAgentResponse(response: Record<string, unknown>): string {
     ]);
   }
   const result = isRecord(response.result) ? response.result : {};
+  if (result.action === "list" && Array.isArray(result.plugins)) {
+    return [
+      `Hot plugins (${result.count ?? result.plugins.length})`,
+      result.plugins.length > 0 && result.plugins.every(isRecord)
+        ? objectTable(result.plugins)
+        : "No plugins.",
+      `Duration  ${response.durationMs ?? response.duration_ms ?? "?"} ms`
+    ].filter(Boolean).join("\n");
+  }
   const warnings = Array.isArray(result.warnings) ? result.warnings.join("\n") : undefined;
   const plugin = isRecord(result.plugin) ? result.plugin : undefined;
   return details("Hot plugin result", [

@@ -53,6 +53,14 @@ public final class AgentCommandContext {
         sender.sendMessage(PREFIX + RED + message);
     }
 
+    public void sendSuccess(AgentCommandSender sender, String message) {
+        sender.sendMessage(PREFIX + GREEN + message);
+    }
+
+    public void sendWarn(AgentCommandSender sender, String message) {
+        sender.sendMessage(PREFIX + YELLOW + message);
+    }
+
     public void sendJson(AgentCommandSender sender, Map<String, Object> result) {
         for (String line : gson.toJson(result).split("\n")) {
             send(sender, line);

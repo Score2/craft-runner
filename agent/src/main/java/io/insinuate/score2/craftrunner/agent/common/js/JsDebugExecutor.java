@@ -48,6 +48,18 @@ public final class JsDebugExecutor {
         }
     }
 
+    public void prepare() {
+        libraries.prepare();
+    }
+
+    public boolean ready() {
+        return libraries.ready();
+    }
+
+    public Map<String, Object> status() {
+        return libraries.status();
+    }
+
     public String inspect(Object value) {
         if (value == null) {
             return "null";

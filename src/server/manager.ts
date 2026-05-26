@@ -25,6 +25,7 @@ import { MetadataStore } from "../storage/metadata.js";
 import { sendRconCommand } from "./rcon.js";
 
 const execFileAsync = promisify(execFile);
+const EXTERNAL_AGENT_STALE_MS = 15_000;
 
 type LaunchCommand = {
   command: string;
@@ -436,13 +437,19 @@ export class ServerManager {
         continue;
       }
       const socketPath = typeof endpoint?.socket === "string" ? endpoint.socket : (process.platform === "win32" ? undefined : path.join(endpointDir, "agent.sock"));
+      const socketExists = socketPath ? await pathExists(socketPath) : false;
+      const endpointFile = path.join(endpointDir, "endpoint.json");
+      const alive = socketExists || await isEndpointFresh(endpointFile);
       result.push({
         id: `agent-${entry.name}`,
         endpoint_name: entry.name,
         endpoint: endpointDir,
         mailbox_dir: endpointDir,
         socket_path: socketPath,
-        socket_exists: socketPath ? await pathExists(socketPath) : false,
+        socket_exists: socketExists,
+        alive,
+        stale: !alive,
+        stale_after_ms: EXTERNAL_AGENT_STALE_MS,
         token,
         platform: endpoint?.platform,
         server_port: endpoint?.serverPort ? Number(endpoint.serverPort) : Number(entry.name),
@@ -470,6 +477,7 @@ export class ServerManager {
     const now = new Date().toISOString();
     const port = Number(agent.server_port);
     const serverDir = typeof agent.server_dir === "string" ? agent.server_dir : String(agent.endpoint);
+    const alive = Boolean(agent.alive);
     const server: ServerMetadata = {
       id: serverId,
       kind: "external",
@@ -486,7 +494,7 @@ export class ServerManager {
       port: Number.isFinite(port) ? port : 0,
       java_args: [],
       memory: { xms: "", xmx: "" },
-      status: "running",
+      status: alive ? "running" : "stopped",
       created_at: now,
       updated_at: now,
       debug_agent: {
@@ -503,7 +511,8 @@ export class ServerManager {
     addEvent(server, "debug_agent_discovered", "Registered manually installed Craft Runner agent", {
       endpoint_name: agent.endpoint_name,
       mailbox_dir: agent.mailbox_dir,
-      socket_path: agent.socket_path
+      socket_path: agent.socket_path,
+      alive
     });
     await this.store.saveServer(server);
     return server;
@@ -586,12 +595,15 @@ export class ServerManager {
     if (!server.debug_agent?.token) {
       throw new Error("debug agent is not installed for this server");
     }
+    const pluginPath = input.path && ["load", "reload"].includes(input.action)
+      ? await this.stageHotPluginJar(server, input.path)
+      : input.path;
     return this.sendAgentRequest(server, {
       language: "hot_plugin",
       thread: "main",
       timeoutMs: input.timeout_ms ?? 10000,
       action: input.action,
-      path: input.path,
+      path: pluginPath,
       pluginName: input.plugin_name,
       enable: input.enable ?? true
     }, "hot_plugin", `Hot plugin action: ${input.action}`);
@@ -685,6 +697,28 @@ export class ServerManager {
     return path.join(this.config.agents_dir, endpointName);
   }
 
+  private async stageHotPluginJar(server: ServerMetadata, pluginPath: string): Promise<string> {
+    const source = path.resolve(pluginPath);
+    if (!source.endsWith(".jar")) {
+      throw new Error("hot plugin path must end with .jar");
+    }
+    if (!(await pathExists(source))) {
+      throw new Error(`hot plugin jar not found: ${source}`);
+    }
+    const pluginsDir = path.join(server.server_dir, "plugins");
+    const target = path.join(pluginsDir, path.basename(source));
+    await ensureDir(pluginsDir);
+    if (path.normalize(source) !== path.normalize(target)) {
+      await fs.copyFile(source, target);
+      addEvent(server, "hot_plugin_staged", "Hot plugin jar staged into plugins directory", {
+        source,
+        target
+      });
+      await this.store.saveServer(server);
+    }
+    return target;
+  }
+
   private async resolveLogFile(server: ServerMetadata, file?: string): Promise<string> {
     if (file) {
       return resolveInside(server.server_dir, file);
@@ -695,20 +729,22 @@ export class ServerManager {
   }
 
   private async refreshStatus(server: ServerMetadata): Promise<ServerMetadata> {
-    if (!["running", "starting", "stopping"].includes(server.status)) {
-      return server;
-    }
     if (server.kind === "external") {
-      const alive = Boolean(
-        (server.debug_agent?.socket_path && await pathExists(server.debug_agent.socket_path)) ||
-        (server.debug_agent?.mailbox_dir && await pathExists(path.join(server.debug_agent.mailbox_dir, "endpoint.json")))
-      );
-      if (!alive) {
+      const alive = await isExternalAgentAlive(server);
+      if (alive && server.status !== "running") {
+        server.status = "running";
+        server.updated_at = new Date().toISOString();
+        addEvent(server, "agent_endpoint_seen", "Discovered agent endpoint is active again");
+        await this.store.saveServer(server);
+      } else if (!alive && server.status !== "stopped") {
         server.status = "stopped";
         server.updated_at = new Date().toISOString();
-        addEvent(server, "agent_endpoint_missing", "Discovered agent endpoint is no longer visible");
+        addEvent(server, "agent_endpoint_missing", "Discovered agent endpoint is no longer active");
         await this.store.saveServer(server);
       }
+      return server;
+    }
+    if (!["running", "starting", "stopping"].includes(server.status)) {
       return server;
     }
     const running = await isServerProcessRunning(server);
@@ -890,6 +926,46 @@ async function isServerProcessRunning(server: ServerMetadata): Promise<boolean> 
     return true;
   }
   return Boolean(server.pid && isProcessAlive(server.pid));
+}
+
+async function isExternalAgentAlive(server: ServerMetadata): Promise<boolean> {
+  if (server.debug_agent?.socket_path && await pathExists(server.debug_agent.socket_path)) {
+    return true;
+  }
+  if (!server.debug_agent?.mailbox_dir) {
+    return false;
+  }
+  return isEndpointFresh(path.join(server.debug_agent.mailbox_dir, "endpoint.json"));
+}
+
+async function isEndpointFresh(endpointFile: string): Promise<boolean> {
+  if (!(await pathExists(endpointFile))) {
+    return false;
+  }
+  const endpoint = await readJson<Record<string, unknown> | undefined>(endpointFile, undefined);
+  const lastSeen = parseEndpointTime(typeof endpoint?.lastSeenAt === "string" ? endpoint.lastSeenAt : undefined);
+  if (lastSeen !== undefined) {
+    return Date.now() - lastSeen <= EXTERNAL_AGENT_STALE_MS;
+  }
+  try {
+    const stat = await fs.stat(endpointFile);
+    return Date.now() - stat.mtimeMs <= EXTERNAL_AGENT_STALE_MS;
+  } catch {
+    return false;
+  }
+}
+
+function parseEndpointTime(value?: string): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+  let timestamp = Date.parse(value);
+  if (Number.isFinite(timestamp)) {
+    return timestamp;
+  }
+  const normalized = value.replace(/\.(\d{3})\d+Z$/, ".$1Z");
+  timestamp = Date.parse(normalized);
+  return Number.isFinite(timestamp) ? timestamp : undefined;
 }
 
 async function isTmuxServerRunning(server: ServerMetadata): Promise<boolean> {

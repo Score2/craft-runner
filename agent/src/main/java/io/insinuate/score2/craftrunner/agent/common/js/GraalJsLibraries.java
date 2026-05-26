@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.logging.Logger;
 
 final class GraalJsLibraries {
@@ -31,6 +32,8 @@ final class GraalJsLibraries {
 
     private final Logger logger;
     private volatile ClassLoader classLoader;
+    private volatile boolean loading;
+    private volatile String lastError;
 
     GraalJsLibraries(Logger logger) {
         this.logger = logger;
@@ -43,10 +46,47 @@ final class GraalJsLibraries {
         }
         synchronized (this) {
             if (classLoader == null) {
-                classLoader = createClassLoader();
+                loading = true;
+                lastError = null;
+                try {
+                    classLoader = createClassLoader();
+                } catch (RuntimeException error) {
+                    lastError = error.getMessage();
+                    throw error;
+                } finally {
+                    loading = false;
+                }
             }
             return classLoader;
         }
+    }
+
+    void prepare() {
+        classLoader();
+    }
+
+    boolean ready() {
+        return classLoader != null;
+    }
+
+    Map<String, Object> status() {
+        String state;
+        if (classLoader != null) {
+            state = "ready";
+        } else if (loading) {
+            state = "loading";
+        } else if (lastError != null) {
+            state = "failed";
+        } else {
+            state = "not-loaded";
+        }
+        return Map.of(
+            "state", state,
+            "ready", classLoader != null,
+            "loading", loading,
+            "version", VERSION,
+            "error", lastError == null ? "" : lastError
+        );
     }
 
     private ClassLoader createClassLoader() {

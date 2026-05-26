@@ -61,6 +61,11 @@ public final class CraftRunnerBukkitPlugin extends JavaPlugin implements AgentPl
     }
 
     @Override
+    public void remoteMessage(String message) {
+        Bukkit.getConsoleSender().sendMessage(message);
+    }
+
+    @Override
     public int serverPort() {
         return getServer().getPort();
     }

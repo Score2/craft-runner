@@ -236,7 +236,7 @@ export function createMcpServer(manager = new ServerManager()): McpServer {
     return debugAgentApiDocs(serverMeta?.loader);
   });
 
-  tool("debug_eval_js", "Execute JavaScript inside a running test server through the file mailbox agent. Prefer the documented DSL: cr.common is cross-platform; cr.platform is platform-specific. Call debug_agent_api for examples before complex scripts.", {
+  tool("debug_eval_js", "Execute JavaScript inside a running test server through the debug agent. The agent preloads GraalJS on startup and logs executions to the server console with [CRA-REMOTE]. Prefer the documented DSL: cr.common is cross-platform; cr.platform is platform-specific. Call debug_agent_api for examples before complex scripts.", {
     server_id: z.string(),
     code: z.string(),
     thread: z.enum(["main", "async"]).optional(),
@@ -248,7 +248,7 @@ export function createMcpServer(manager = new ServerManager()): McpServer {
     timeout_ms: args.timeout_ms
   }));
 
-  tool("debug_eval_js_file", "Execute a local JavaScript file inside a running test server through the debug agent. Scripts can use cr.common for cross-platform helpers and cr.platform for platform-specific helpers.", {
+  tool("debug_eval_js_file", "Execute a local JavaScript file inside a running test server through the debug agent. The agent preloads GraalJS on startup and logs executions to the server console with [CRA-REMOTE]. Scripts can use cr.common for cross-platform helpers and cr.platform for platform-specific helpers.", {
     server_id: z.string(),
     file: z.string(),
     thread: z.enum(["main", "async"]).optional(),
@@ -278,7 +278,7 @@ export function createMcpServer(manager = new ServerManager()): McpServer {
     timeout_ms: args.timeout_ms
   }));
 
-  tool("hot_load_plugin", "Runtime-load a Bukkit-family plugin jar through the debug agent. Supports plugin.yml everywhere and paper-plugin.yml on Paper/Folia through reflective Paper internals. Do not use by default unless the user wants hot debugging or no restart.", {
+  tool("hot_load_plugin", "Runtime-load a Bukkit-family plugin jar through the debug agent. The jar is first copied into the server's plugins/ directory, including remote/external servers. Supports plugin.yml everywhere and paper-plugin.yml on Paper/Folia through reflective Paper internals. Do not use by default unless the user wants hot debugging or no restart.", {
     server_id: z.string(),
     plugin_path: z.string(),
     enable: z.boolean().optional(),
@@ -302,7 +302,7 @@ export function createMcpServer(manager = new ServerManager()): McpServer {
     timeout_ms: args.timeout_ms
   }));
 
-  tool("hot_reload_plugin", "Best-effort unload then runtime-load a Bukkit-family plugin jar through the debug agent. Prefer normal restart unless the user explicitly wants hot debugging.", {
+  tool("hot_reload_plugin", "Best-effort unload then runtime-load a Bukkit-family plugin jar through the debug agent. The jar is first copied into the server's plugins/ directory, including remote/external servers. Prefer normal restart unless the user explicitly wants hot debugging.", {
     server_id: z.string(),
     plugin_name: z.string(),
     plugin_path: z.string(),
@@ -375,6 +375,13 @@ function debugAgentApiDocs(loader?: string): Record<string, unknown> {
         "Use /craftragent status or /craftragent token in Bukkit-family, BungeeCord/Waterfall, and Velocity servers for direct inspection."
       ]
     },
+    runtime_notes: [
+      "debug_eval_js defaults to thread=main. Use thread=async only for non-server-state work.",
+      "The agent starts GraalJS library download/loading asynchronously during plugin startup.",
+      "If JS library loading fails, a server operator can run /cra js-status and /cra js-load after fixing network/cache issues.",
+      "Remote MCP executions are logged on the server console with the [CRA-REMOTE] prefix.",
+      "Returned values are serialized into JSON-friendly values; large arrays/maps are truncated."
+    ],
     current_loader_hint: loader ?? null,
     common: {
       methods: commonMethods,
@@ -409,6 +416,7 @@ function debugAgentApiDocs(loader?: string): Record<string, unknown> {
         hot_plugin_notes: [
           "Hot plugin lifecycle is exposed as MCP tools, not as JS snippets.",
           "Do not choose hot load/unload/reload by default. Prefer a normal server restart for plugin changes unless the user explicitly wants hot debugging, fast iteration, or quick visual/string tuning.",
+          "hot_load_plugin and hot_reload_plugin copy the supplied jar into the target server's plugins/ directory before asking the agent to load it.",
           "If hot reload/unload produces strange behavior, stale state, missing commands, classloader issues, scheduler issues, or dependency inconsistencies, first consider whether a full server restart is the correct fix. Respect explicit user instructions that they do not want a restart.",
           "plugin.yml jars use the public Bukkit/Paper runtime path. paper-plugin.yml jars are supported on Paper/Folia through reflective Paper internals.",
           "On Paper 1.20.5+ plugin remapping is delegated to the running server.",
@@ -433,9 +441,9 @@ function debugAgentApiDocs(loader?: string): Record<string, unknown> {
           "cr.platform.onlineCount()"
         ],
         hot_plugin_notes: [
-          "BungeeCord/Waterfall and Velocity currently expose mailbox/socket, JS eval, and list/capability surfaces.",
-          "Hot load/unload on proxy platforms is reported as unsupported until a platform-specific lifecycle path can safely initialize and dispose plugin state.",
-          "Velocity has no public unload API, and runtime loading cannot safely replay ProxyInitializeEvent only for a newly loaded plugin without affecting existing plugins."
+          "BungeeCord/Waterfall and Velocity hot load/unload/reload are best-effort and use platform internals reflectively.",
+          "Prefer restart for proxy plugin changes unless the user explicitly wants hot debugging.",
+          "Velocity has no public unload API; runtime unloading removes detectable listeners, commands, scheduler tasks, registry entries, and classloaders where possible."
         ]
       }
     },

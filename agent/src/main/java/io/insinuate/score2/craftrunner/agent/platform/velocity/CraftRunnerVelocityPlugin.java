@@ -16,6 +16,7 @@ import io.insinuate.score2.craftrunner.agent.platform.velocity.hot.VelocityHotPl
 import java.net.InetSocketAddress;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 
 @Plugin(
     id = "craft-runner-agent",
@@ -28,6 +29,7 @@ public final class CraftRunnerVelocityPlugin implements AgentPlatform {
     private final ProxyServer proxy;
     private final org.slf4j.Logger slf4jLogger;
     private final Logger logger = Logger.getLogger("CraftRunnerAgent-Velocity");
+    private final LegacyComponentSerializer legacy = LegacyComponentSerializer.legacySection();
     private AgentRuntime runtime;
     private VelocityHotPluginOperations hotPluginOperations;
 
@@ -80,6 +82,11 @@ public final class CraftRunnerVelocityPlugin implements AgentPlatform {
     @Override
     public Object serverObject() {
         return proxy;
+    }
+
+    @Override
+    public void remoteMessage(String message) {
+        proxy.getConsoleCommandSource().sendMessage(legacy.deserialize(message));
     }
 
     @Override

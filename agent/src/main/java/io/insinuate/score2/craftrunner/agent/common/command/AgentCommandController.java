@@ -9,14 +9,15 @@ import java.util.Locale;
 public final class AgentCommandController {
     private static final List<String> SUBCOMMANDS = List.of(
         "help",
-        "status",
+        "info",
         "token",
-        "capabilities",
+        "js-status",
+        "js-load",
         "list",
         "load",
         "unload",
         "reload",
-        "hot-capabilities",
+        "hot-info",
         "hot-list",
         "hot-load",
         "hot-unload",
@@ -27,6 +28,7 @@ public final class AgentCommandController {
     private final AgentHelpCommand helpCommand = new AgentHelpCommand();
     private final AgentInfoCommand infoCommand = new AgentInfoCommand();
     private final AgentHotCommand hotCommand = new AgentHotCommand();
+    private final AgentJsCommand jsCommand = new AgentJsCommand();
 
     public AgentCommandController(AgentPlatform platform, AgentRuntime runtime) {
         this.context = new AgentCommandContext(platform, runtime);
@@ -42,9 +44,10 @@ public final class AgentCommandController {
             return;
         }
         switch (args[0].toLowerCase(Locale.ROOT)) {
-            case "status" -> status(sender);
+            case "info", "hot-info" -> info(sender, args.length > 1 ? args[1] : null);
             case "token" -> token(sender);
-            case "capabilities", "hot-capabilities" -> capabilities(sender);
+            case "js-status" -> jsStatus(sender);
+            case "js-load" -> jsLoad(sender);
             case "list", "hot-list" -> list(sender);
             case "hot-load", "load" -> load(sender, required(args, 1, "plugin jar or plugin name"), !context.contains(args, "--no-enable"));
             case "hot-unload", "unload" -> unload(sender, required(args, 1, "plugin name"));
@@ -61,16 +64,20 @@ public final class AgentCommandController {
         run(sender, () -> helpCommand.execute(context, sender, label));
     }
 
-    public void status(AgentCommandSender sender) {
-        run(sender, () -> infoCommand.status(context, sender));
+    public void info(AgentCommandSender sender, String pluginName) {
+        run(sender, () -> infoCommand.info(context, sender, pluginName));
     }
 
     public void token(AgentCommandSender sender) {
         run(sender, () -> infoCommand.token(context, sender));
     }
 
-    public void capabilities(AgentCommandSender sender) {
-        run(sender, () -> hotCommand.capabilities(context, sender));
+    public void jsStatus(AgentCommandSender sender) {
+        run(sender, () -> jsCommand.status(context, sender));
+    }
+
+    public void jsLoad(AgentCommandSender sender) {
+        run(sender, () -> jsCommand.load(context, sender));
     }
 
     public void list(AgentCommandSender sender) {
@@ -101,6 +108,9 @@ public final class AgentCommandController {
         String current = trailingSpace ? "" : args[args.length - 1];
         if (argumentIndex == 1 && ("hot-load".equals(command) || "load".equals(command))) {
             return suggestLoad(current);
+        }
+        if (argumentIndex == 1 && ("hot-info".equals(command) || "info".equals(command))) {
+            return suggestLoaded(current);
         }
         if (argumentIndex == 1 && ("hot-unload".equals(command) || "unload".equals(command))) {
             return suggestLoaded(current);

@@ -2,6 +2,7 @@ package io.insinuate.score2.craftrunner.agent.common.runtime;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import io.insinuate.score2.craftrunner.agent.common.js.JsDebugExecutor;
 import io.insinuate.score2.craftrunner.agent.common.mailbox.FileMailbox;
 import io.insinuate.score2.craftrunner.agent.common.mailbox.UnixSocketMailbox;
 import java.nio.charset.StandardCharsets;
@@ -18,6 +19,7 @@ public final class AgentRuntime {
     private ScheduledExecutorService scheduler;
     private AgentEndpointInfo endpointInfo;
     private UnixSocketMailbox unixSocketMailbox;
+    private JsDebugExecutor jsExecutor;
 
     public AgentRuntime(AgentPlatform platform) {
         this.platform = platform;
@@ -38,13 +40,15 @@ public final class AgentRuntime {
                 thread.setDaemon(true);
                 return thread;
             });
-            FileMailbox mailbox = new FileMailbox(platform, config, endpoint, scheduler);
+            jsExecutor = new JsDebugExecutor(platform);
+            FileMailbox mailbox = new FileMailbox(platform, config, endpoint, scheduler, jsExecutor);
             mailbox.ensureDirectories();
             scheduler.scheduleWithFixedDelay(mailbox, 0L, Math.max(50L, config.pollIntervalMs()), TimeUnit.MILLISECONDS);
             if (socket != null) {
-                unixSocketMailbox = new UnixSocketMailbox(platform, config, socket, scheduler);
+                unixSocketMailbox = new UnixSocketMailbox(platform, config, socket, scheduler, jsExecutor);
                 scheduler.submit(unixSocketMailbox);
             }
+            scheduler.submit(this::prepareJsQuietly);
             endpointInfo = new AgentEndpointInfo(root, endpoint, socket, endpointName, platform.platformName(), platform.serverPort(), Path.of("").toAbsolutePath(), config.token(), loaded.generated(), true);
             writeEndpointInfo(root, endpoint, endpointInfo);
             scheduler.scheduleWithFixedDelay(() -> writeEndpointInfoQuietly(root, endpoint, endpointInfo), 2L, 2L, TimeUnit.SECONDS);
@@ -52,6 +56,13 @@ public final class AgentRuntime {
         } catch (Exception error) {
             platform.logger().severe("Failed to enable Craft Runner debug endpoint: " + error);
         }
+    }
+
+    public JsDebugExecutor jsExecutor() {
+        if (jsExecutor == null) {
+            jsExecutor = new JsDebugExecutor(platform);
+        }
+        return jsExecutor;
     }
 
     public void disable() {
@@ -152,6 +163,15 @@ public final class AgentRuntime {
 
     private Path agentsRoot() {
         return Path.of(System.getProperty("user.home"), ".craft-runner", "agents");
+    }
+
+    private void prepareJsQuietly() {
+        try {
+            jsExecutor().prepare();
+            platform.logger().info("Craft Runner JS engine is ready.");
+        } catch (Throwable error) {
+            platform.logger().warning("Craft Runner JS engine preload failed; run /cra js-load to retry: " + error.getMessage());
+        }
     }
 
     private void writeEndpointInfo(Path root, Path endpoint, AgentEndpointInfo info) throws Exception {

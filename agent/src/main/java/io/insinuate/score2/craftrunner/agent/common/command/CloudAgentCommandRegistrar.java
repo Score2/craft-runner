@@ -35,14 +35,18 @@ public final class CloudAgentCommandRegistrar<C> {
 
     private void registerInfoCommands() {
         commandManager.command(base().literal("help").handler(context -> controller.help(sender(context), "craftragent")));
-        commandManager.command(base().literal("status").handler(context -> controller.status(sender(context))));
+        for (String literal : new String[] {"info", "hot-info"}) {
+            commandManager.command(base().literal(literal).handler(context -> controller.info(sender(context), null)));
+            commandManager.command(base().literal(literal)
+                .required("plugin", StringParser.stringParser(), loadedSuggestions())
+                .handler(context -> controller.info(sender(context), requireString(context, "plugin"))));
+        }
         commandManager.command(base().literal("token").handler(context -> controller.token(sender(context))));
+        commandManager.command(base().literal("js-status").handler(context -> controller.jsStatus(sender(context))));
+        commandManager.command(base().literal("js-load").handler(context -> controller.jsLoad(sender(context))));
     }
 
     private void registerHotCommands() {
-        for (String literal : new String[] {"capabilities", "hot-capabilities"}) {
-            commandManager.command(base().literal(literal).handler(context -> controller.capabilities(sender(context))));
-        }
         for (String literal : new String[] {"list", "hot-list"}) {
             commandManager.command(base().literal(literal).handler(context -> controller.list(sender(context))));
         }
@@ -85,11 +89,11 @@ public final class CloudAgentCommandRegistrar<C> {
     }
 
     private SuggestionProvider<C> loadSuggestions() {
-        return SuggestionProvider.blockingStrings((context, input) -> controller.suggestLoad(input.input()));
+        return SuggestionProvider.blockingStrings((context, input) -> controller.suggestLoad(input.lastRemainingToken()));
     }
 
     private SuggestionProvider<C> loadedSuggestions() {
-        return SuggestionProvider.blockingStrings((context, input) -> controller.suggestLoaded(input.input()));
+        return SuggestionProvider.blockingStrings((context, input) -> controller.suggestLoaded(input.lastRemainingToken()));
     }
 
     private AgentCommandSender sender(CommandContext<C> context) {

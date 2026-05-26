@@ -143,7 +143,8 @@ test("ServerManager sends structured hot plugin requests through file mailbox", 
   const request = JSON.parse(await fs.readFile(path.join(installed.debug_agent.mailbox_dir, "requests", `${(response as { id: string }).id}.json`), "utf8"));
   assert.equal(request.language, "hot_plugin");
   assert.equal(request.action, "load");
-  assert.equal(request.path, fakePlugin);
+  assert.equal(request.path, path.join(server.server_dir, "plugins", "fake-plugin.jar"));
+  assert.equal(await fs.readFile(request.path, "utf8"), "fake plugin jar");
 });
 
 test("ServerManager discovers manually installed agents and registers them as external servers", async () => {
@@ -167,7 +168,7 @@ test("ServerManager discovers manually installed agents and registers them as ex
     serverPort: 41234,
     serverDir: path.join(root, "manual-server"),
     token: "manual-token",
-    lastSeenAt: "2026-05-26T00:00:00.000Z",
+    lastSeenAt: new Date().toISOString(),
     transports: [{ type: "file-mailbox", path: endpoint }]
   }));
 
@@ -187,6 +188,55 @@ test("ServerManager discovers manually installed agents and registers them as ex
     () => manager.destroy(registered.id),
     /cannot be destroyed/
   );
+});
+
+test("ServerManager marks stale external agents stopped even when mailbox directory remains", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "craft-runner-stale-agent-test-"));
+  const config = testConfig(root);
+  const manager = new ServerManager(config);
+  const endpointName = "41235";
+  const endpoint = path.join(config.agents_dir, endpointName);
+  await fs.mkdir(endpoint, { recursive: true });
+  await fs.writeFile(path.join(endpoint, "config.json"), JSON.stringify({
+    token: "manual-token",
+    endpointName,
+    pollIntervalMs: 250
+  }));
+  await fs.writeFile(path.join(endpoint, "endpoint.json"), JSON.stringify({
+    schema: "craft-runner-agent-endpoint",
+    version: 1,
+    endpointName,
+    endpoint,
+    platform: "bukkit",
+    serverPort: 41235,
+    serverDir: path.join(root, "manual-server"),
+    token: "manual-token",
+    lastSeenAt: "2020-01-01T00:00:00.000000000Z",
+    socket: path.join(endpoint, "agent.sock"),
+    transports: [{ type: "file-mailbox", path: endpoint }]
+  }));
+
+  const discovered = await manager.discoverDebugAgents();
+  assert.equal(discovered[0].alive, false);
+  assert.equal(discovered[0].stale, true);
+
+  const registered = await manager.registerDiscoveredAgent(endpointName, "manual-stale-agent-test");
+  assert.equal(registered.status, "stopped");
+
+  await fs.writeFile(path.join(endpoint, "endpoint.json"), JSON.stringify({
+    schema: "craft-runner-agent-endpoint",
+    version: 1,
+    endpointName,
+    endpoint,
+    platform: "bukkit",
+    serverPort: 41235,
+    serverDir: path.join(root, "manual-server"),
+    token: "manual-token",
+    lastSeenAt: new Date().toISOString(),
+    transports: [{ type: "file-mailbox", path: endpoint }]
+  }));
+  const refreshed = await manager.get(registered.id);
+  assert.equal(refreshed.status, "running");
 });
 
 test("ServerManager prefers tmux sessions and marks manually killed sessions stopped", { skip: process.platform === "win32" }, async () => {

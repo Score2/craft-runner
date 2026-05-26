@@ -9,6 +9,7 @@ import io.insinuate.score2.craftrunner.agent.platform.bungee.hot.BungeeHotPlugin
 import java.net.SocketAddress;
 import java.util.logging.Logger;
 import net.md_5.bungee.api.config.ListenerInfo;
+import net.md_5.bungee.api.chat.TextComponent;
 import net.md_5.bungee.api.plugin.Plugin;
 
 public final class CraftRunnerBungeePlugin extends Plugin implements AgentPlatform {
@@ -54,6 +55,11 @@ public final class CraftRunnerBungeePlugin extends Plugin implements AgentPlatfo
     @Override
     public Object serverObject() {
         return getProxy();
+    }
+
+    @Override
+    public void remoteMessage(String message) {
+        getProxy().getConsole().sendMessage(TextComponent.fromLegacyText(message));
     }
 
     @Override

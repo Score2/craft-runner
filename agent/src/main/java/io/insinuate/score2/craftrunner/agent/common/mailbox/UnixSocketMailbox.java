@@ -2,6 +2,7 @@ package io.insinuate.score2.craftrunner.agent.common.mailbox;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import io.insinuate.score2.craftrunner.agent.common.js.JsDebugExecutor;
 import io.insinuate.score2.craftrunner.agent.common.runtime.AgentConfig;
 import io.insinuate.score2.craftrunner.agent.common.runtime.AgentPlatform;
 import java.io.ByteArrayOutputStream;
@@ -24,10 +25,10 @@ public final class UnixSocketMailbox implements Runnable {
     private volatile boolean running = true;
     private ServerSocketChannel server;
 
-    public UnixSocketMailbox(AgentPlatform platform, AgentConfig config, Path socket, ExecutorService asyncExecutor) {
+    public UnixSocketMailbox(AgentPlatform platform, AgentConfig config, Path socket, ExecutorService asyncExecutor, JsDebugExecutor jsExecutor) {
         this.platform = platform;
         this.socket = socket;
-        this.requestHandler = new DebugRequestHandler(platform, config, asyncExecutor);
+        this.requestHandler = new DebugRequestHandler(platform, config, asyncExecutor, jsExecutor);
     }
 
     public void stop() {

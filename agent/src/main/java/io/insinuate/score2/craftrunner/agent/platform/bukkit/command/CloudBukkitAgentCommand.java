@@ -17,6 +17,15 @@ public final class CloudBukkitAgentCommand {
             plugin,
             ExecutionCoordinator.simpleCoordinator()
         );
+        try {
+            commandManager.registerBrigadier();
+        } catch (Exception brigadierError) {
+            try {
+                commandManager.registerAsynchronousCompletions();
+            } catch (Exception completionError) {
+                plugin.getLogger().warning("Craft Runner cloud command completions are limited: " + completionError);
+            }
+        }
         new CloudAgentCommandRegistrar<>(commandManager, sender -> sender::sendMessage, platform, runtime).register();
     }
 }

@@ -16,12 +16,13 @@ public final class DebugRequestHandler {
     private final ExecutorService asyncExecutor;
     private final JsDebugExecutor executor;
     private final HotPluginExecutor hotPluginExecutor;
+    private static final String REMOTE_PREFIX = "§8[§6CR§e§lA§6-REMOTE§8] §7";
 
-    public DebugRequestHandler(AgentPlatform platform, AgentConfig config, ExecutorService asyncExecutor) {
+    public DebugRequestHandler(AgentPlatform platform, AgentConfig config, ExecutorService asyncExecutor, JsDebugExecutor executor) {
         this.platform = platform;
         this.config = config;
         this.asyncExecutor = asyncExecutor;
-        this.executor = new JsDebugExecutor(platform);
+        this.executor = executor;
         this.hotPluginExecutor = new HotPluginExecutor(platform);
     }
 
@@ -35,7 +36,14 @@ public final class DebugRequestHandler {
         if (!"js".equalsIgnoreCase(request.language()) && !"hot_plugin".equalsIgnoreCase(request.language())) {
             return DebugResponse.failure(request.id(), "unsupported language: " + request.language());
         }
-        return execute(request);
+        platform.remoteMessage(REMOTE_PREFIX + "Executing " + describe(request) + " request " + request.id());
+        DebugResponse response = execute(request);
+        if (response.ok()) {
+            platform.remoteMessage(REMOTE_PREFIX + "§aCompleted §7" + describe(request) + " request " + request.id() + " in " + response.durationMs() + "ms");
+        } else {
+            platform.remoteMessage(REMOTE_PREFIX + "§cFailed §7" + describe(request) + " request " + request.id() + ": " + response.error());
+        }
+        return response;
     }
 
     private DebugResponse execute(DebugRequest request) {
@@ -69,6 +77,15 @@ public final class DebugRequestHandler {
             return hotPluginExecutor.execute(request);
         }
         return executor.execute(request.code());
+    }
+
+    private String describe(DebugRequest request) {
+        if ("hot_plugin".equalsIgnoreCase(request.language())) {
+            String action = request.action() == null || request.action().isBlank() ? "hot_plugin" : "hot_plugin " + request.action();
+            String plugin = request.pluginName() == null || request.pluginName().isBlank() ? "" : " " + request.pluginName();
+            return action + plugin;
+        }
+        return "js";
     }
 
     private long elapsedMs(long started) {

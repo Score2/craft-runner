@@ -18,6 +18,10 @@ public interface AgentPlatform {
 
     Object serverObject();
 
+    default void remoteMessage(String message) {
+        logger().info(message);
+    }
+
     default int serverPort() {
         return -1;
     }

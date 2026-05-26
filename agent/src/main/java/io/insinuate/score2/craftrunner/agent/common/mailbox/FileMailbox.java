@@ -2,6 +2,7 @@ package io.insinuate.score2.craftrunner.agent.common.mailbox;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import io.insinuate.score2.craftrunner.agent.common.js.JsDebugExecutor;
 import io.insinuate.score2.craftrunner.agent.common.runtime.AgentConfig;
 import io.insinuate.score2.craftrunner.agent.common.runtime.AgentPlatform;
 import java.io.IOException;
@@ -25,13 +26,13 @@ public final class FileMailbox implements Runnable {
     private final Gson gson = new GsonBuilder().disableHtmlEscaping().create();
     private final Set<String> seen = new HashSet<>();
 
-    public FileMailbox(AgentPlatform platform, AgentConfig config, Path root, ExecutorService asyncExecutor) {
+    public FileMailbox(AgentPlatform platform, AgentConfig config, Path root, ExecutorService asyncExecutor, JsDebugExecutor jsExecutor) {
         this.platform = platform;
         this.root = root;
         this.requests = root.resolve("requests");
         this.responses = root.resolve("responses");
         this.tmp = root.resolve("tmp");
-        this.requestHandler = new DebugRequestHandler(platform, config, asyncExecutor);
+        this.requestHandler = new DebugRequestHandler(platform, config, asyncExecutor, jsExecutor);
     }
 
     public void ensureDirectories() throws IOException {
