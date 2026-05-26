@@ -28,10 +28,18 @@ test("RemoteBridge uses non-interactive SSH and sends bridge JSON", async () => 
       server_id: "remote-test",
       plugin_path: payload
     });
+    await new RemoteBridge("lab-linux").request("create_server", {
+      id: "direct-core",
+      core_ref: {
+        loader: "custom",
+        minecraft_version: "1.20.4",
+        direct_path: "/srv/minecraft/server.jar"
+      }
+    });
 
     assert.deepEqual(result.remote, {
       host: "lab-linux",
-      craftr_version: "1.0.0",
+      craftr_version: "1.0.1",
       bridge_protocol: { major: 1, minor: 0 }
     });
     assert.deepEqual(result.result, {
@@ -45,6 +53,13 @@ test("RemoteBridge uses non-interactive SSH and sends bridge JSON", async () => 
     assert.equal(records.some((record) => record.args.includes("NumberOfPasswordPrompts=0")), true);
     assert.equal(records.some((record) => record.command.join(" ") === "craftr bridge version"), true);
     assert.equal(records.some((record) => record.command.join(" ") === "craftr bridge request"), true);
+    const createRequest = records
+      .filter((record) => record.command.join(" ") === "craftr bridge request")
+      .map((record) => JSON.parse(record.input))
+      .find((request) => request.tool === "create_server");
+    assert.equal(createRequest.arguments.core_ref.direct_path, "/srv/minecraft/server.jar");
+    assert.equal(createRequest.arguments.core_ref.path, undefined);
+    assert.equal(createRequest.arguments.core_ref.file_content_base64, undefined);
   } finally {
     if (previousSshBin === undefined) {
       delete process.env.CRAFT_RUNNER_SSH_BIN;
@@ -124,7 +139,7 @@ async function writeFakeSsh(target: string, calls: string): Promise<void> {
     "  fs.appendFileSync(calls, JSON.stringify({ args, port, target, command, input }) + '\\n');",
     "  if (command.join(' ') === 'echo craft-runner-ssh-ok') { console.log('craft-runner-ssh-ok'); process.exit(0); }",
     "  if (command.join(' ') === 'craftr bridge version') {",
-    "    console.log(JSON.stringify({ name: '@score2/craft-runner', version: '1.0.0', bridge_protocol: { major: 1, minor: 0 }, capabilities: [] }));",
+    "    console.log(JSON.stringify({ name: '@score2/craft-runner', version: '1.0.1', bridge_protocol: { major: 1, minor: 0 }, capabilities: [] }));",
     "    process.exit(0);",
     "  }",
     "  if (command.join(' ') === 'craftr bridge request') {",

@@ -9,7 +9,7 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 
 test("agent jar is a slim single artifact and loads GraalJS as runtime libraries", async () => {
-  const jar = path.join(process.cwd(), "agent", "build", "libs", "craft-runner-agent-1.0.0.jar");
+  const jar = path.join(process.cwd(), "agent", "build", "libs", "craft-runner-agent-1.0.1.jar");
   const stat = await fs.stat(jar);
   assert.ok(stat.size < 6 * 1024 * 1024, `agent jar should stay slim, got ${stat.size} bytes`);
 

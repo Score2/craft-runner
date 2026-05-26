@@ -14,7 +14,7 @@ export const BRIDGE_PROTOCOL = {
 } as const;
 
 export const PACKAGE_NAME = "@score2/craft-runner";
-export const PACKAGE_VERSION = "1.0.0";
+export const PACKAGE_VERSION = "1.0.1";
 
 export type BridgeVersion = {
   name: string;

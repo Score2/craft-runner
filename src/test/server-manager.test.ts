@@ -147,6 +147,85 @@ test("ServerManager sends structured hot plugin requests through file mailbox", 
   assert.equal(await fs.readFile(request.path, "utf8"), "fake plugin jar");
 });
 
+test("ServerManager removes timed out file mailbox requests", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "craft-runner-debug-timeout-test-"));
+  const fakeCore = path.join(root, "fake-server.jar");
+  const fakeAgent = path.join(root, "fake-agent.jar");
+  await fs.writeFile(fakeCore, "fake jar");
+  await fs.writeFile(fakeAgent, "fake agent jar");
+
+  const manager = new ServerManager(testConfig(root));
+  const server = await manager.create({
+    id: "debug-timeout-test",
+    core_ref: {
+      loader: "custom",
+      minecraft_version: "1.20.4",
+      path: fakeCore
+    }
+  });
+  const installed = await manager.installDebugAgent(server.id, fakeAgent);
+  const mailboxDir = installed.debug_agent?.mailbox_dir;
+  assert.ok(mailboxDir);
+
+  await assert.rejects(
+    manager.debugEvalJs({
+      server_id: server.id,
+      code: "1 + 1",
+      thread: "main",
+      timeout_ms: 100
+    }),
+    /debug agent response timed out/
+  );
+
+  const requestFiles = await fs.readdir(path.join(mailboxDir, "requests"));
+  assert.deepEqual(requestFiles.filter((file) => file.endsWith(".json")), []);
+});
+
+test("ServerManager can launch an existing direct core path without caching it", { skip: process.platform === "win32" }, async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "craft-runner-direct-core-test-"));
+  const directCore = path.join(root, "existing-server.jar");
+  const fakeJava = path.join(root, "fake-java");
+  const javaArgsFile = path.join(root, "java-args.json");
+  await fs.writeFile(directCore, "fake jar");
+  await writeFakeJava(fakeJava);
+
+  const previousPath = process.env.PATH;
+  const previousArgsFile = process.env.CRAFT_FAKE_JAVA_ARGS;
+  process.env.PATH = path.join(root, "empty-bin");
+  process.env.CRAFT_FAKE_JAVA_ARGS = javaArgsFile;
+  try {
+    const manager = new ServerManager(testConfig(root));
+    const server = await manager.create({
+      id: "direct-core-test",
+      java_ref: `path:${fakeJava}`,
+      core_ref: {
+        loader: "custom",
+        minecraft_version: "1.20.4",
+        direct_path: directCore
+      }
+    });
+
+    assert.equal(server.core_ref.direct_path, directCore);
+    assert.equal((await manager.coreCache.list()).length, 0);
+
+    const started = await manager.start(server.id);
+    assert.equal(started.launch_backend, "background");
+    const args = JSON.parse(await waitForFile(javaArgsFile)) as string[];
+    assert.equal(args.includes(directCore), true);
+    assert.equal(args.includes("nogui"), true);
+    assert.equal((await manager.getEvents(server.id)).some((event) => event.type === "core_direct_path"), true);
+
+    await manager.stop(server.id, 3000);
+  } finally {
+    process.env.PATH = previousPath;
+    if (previousArgsFile === undefined) {
+      delete process.env.CRAFT_FAKE_JAVA_ARGS;
+    } else {
+      process.env.CRAFT_FAKE_JAVA_ARGS = previousArgsFile;
+    }
+  }
+});
+
 test("ServerManager discovers manually installed agents and registers them as external servers", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "craft-runner-discover-agent-test-"));
   const config = testConfig(root);
@@ -383,7 +462,7 @@ function testConfig(root: string): CraftRunnerConfig {
     agents_dir: path.join(root, "home", "agents"),
     server_base_dir: path.join(root, "servers-base"),
     state_dir: path.join(root, "state"),
-    user_agent: "craft-runner-test/1.0.0",
+    user_agent: "craft-runner-test/1.0.1",
     ports: {
       minecraft_start: 41000,
       minecraft_end: 41020,

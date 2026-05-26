@@ -147,7 +147,8 @@ async function run(domain: string | undefined, action: string | undefined, args:
         minecraft_version: valueAfter(args, "--minecraft-version") ?? valueAfter(args, "--mc"),
         build: valueAfter(args, "--build"),
         path: valueAfter(args, "--path"),
-        url: valueAfter(args, "--url")
+        url: valueAfter(args, "--url"),
+        direct_path: valueAfter(args, "--direct-path")
       }
     });
   }
@@ -255,6 +256,7 @@ function usage(): string {
     "  craft-runner server create --id <id> --core-id <core-id> [--start]",
     "  craft-runner server create --id <id> --loader <loader> --minecraft-version <version> [--build <build>]",
     "  craft-runner server create --id <id> --path <server.jar> --minecraft-version <version>",
+    "  craft-runner server create --id <id> --direct-path <server.jar> --minecraft-version <version>",
     "  craft-runner server list",
     "  craft-runner server info <id>",
     "  craft-runner server start <id>",
@@ -856,6 +858,7 @@ _craft_runner() {
             '--build[core build]' \
             '--path[custom server jar]:jar:_files -g "*.jar"' \
             '--url[custom HTTPS server jar URL]' \
+            '--direct-path[existing server jar on execution host]:jar:_files -g "*.jar"' \
             '--start[start after creation]' \
             '--base-dir[base directory]:directory:_files -/' \
             '--persistent[persist server directory]' \

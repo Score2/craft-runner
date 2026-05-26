@@ -83,6 +83,7 @@ craft-runner java list
 craft-runner java validate 1.21.4 --java sdk:21.0.10-oracle
 craft-runner server create --id test-paper --loader paper --minecraft-version 1.21.4 --start
 craft-runner server create --id local-custom --path ./server.jar --minecraft-version 1.20.4
+craft-runner server create --id direct-custom --direct-path /opt/minecraft/server.jar --minecraft-version 1.20.4
 craft-runner server list
 craft-runner server info test-server
 craft-runner server logs test-server --tail 120
@@ -93,6 +94,11 @@ craft-runner core info paper-1.21.4-123
 craft-runner core verify paper-1.21.4-123
 craft-runner core remove paper-1.21.4-123
 ```
+
+`--path` imports a custom jar into craft-runner's shared core cache. Use
+`--direct-path` when the jar already exists on the execution host and should be
+launched directly without copying it into the core cache. For remote MCP calls,
+`core_ref.direct_path` is interpreted on the remote host.
 
 
 The shorter alias `craftr` is also installed:

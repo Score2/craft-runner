@@ -4,7 +4,7 @@ license = "MIT"
 
 [[mods]]
 modId = "craft_runner_agent"
-version = "1.0.0"
+version = "1.0.1"
 displayName = "Craft Runner Agent"
 authors = "Score2"
 description = "Local craft-runner debug bridge for executing JavaScript through a file mailbox."

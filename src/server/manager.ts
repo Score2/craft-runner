@@ -12,13 +12,15 @@ import { allocatePort, releasePort } from "./ports.js";
 import { loadConfig } from "../lib/config.js";
 import {
   CreateServerInput,
+  CoreMetadata,
+  CoreRef,
   CraftRunnerConfig,
   DebugEvalInput,
   HotPluginInput,
   ServerEvent,
   ServerMetadata
 } from "../lib/types.js";
-import { ensureDir, pathExists, readJson, resolveInside, validateServerId, writeJson } from "../lib/fsx.js";
+import { ensureDir, pathExists, readJson, resolveInside, sanitizeIdPart, validateServerId, writeJson } from "../lib/fsx.js";
 import { randomId } from "../lib/hash.js";
 import { getJavaInfo, resolveJavaCommand, validateJavaForMinecraft } from "../java/discovery.js";
 import { MetadataStore } from "../storage/metadata.js";
@@ -59,7 +61,10 @@ export class ServerManager {
       throw new Error(`server already exists: ${id}`);
     }
 
-    const core = await resolveCore(input.core_ref, this.coreCache);
+    const core = await this.resolveCreateCore(input.core_ref);
+    const coreRef = core.provider === "direct-path"
+      ? { ...input.core_ref, direct_path: core.file_path }
+      : input.core_ref;
     const javaRef = input.java_ref ?? this.config.java.default_ref;
     const validation = await validateJavaForMinecraft(javaRef, core.minecraft_version);
     if (!validation.ok) {
@@ -89,7 +94,7 @@ export class ServerManager {
       persistent: input.persistent ?? Boolean(input.base_dir),
       managed: true,
       deletable: true,
-      core_ref: input.core_ref,
+      core_ref: coreRef,
       core_id: core.id,
       minecraft_version: core.minecraft_version,
       loader: core.loader,
@@ -204,14 +209,14 @@ export class ServerManager {
     if (server.status === "running" && await isServerProcessRunning(server)) {
       return server;
     }
-    const core = await this.coreCache.get(server.core_id);
-    if (!core) throw new Error(`core not found: ${server.core_id}`);
     const java = await getJavaInfo(server.java_ref ?? "system");
     if (!java.valid) throw new Error(java.error ?? "selected Java is not valid");
 
     await ensureDir(server.server_dir);
-    const materialized = await this.coreInstallation.materialize(core, server);
-    const command = await buildLaunchCommand(server, materialized.launch);
+    const directPath = directCorePath(server.core_ref);
+    const command = directPath
+      ? await buildLaunchCommand(server, { command: "java", args: ["-jar", directPath, "nogui"] })
+      : await this.buildCachedCoreLaunchCommand(server);
     const runtime = await startServerProcess(server, command, java.command, this.stdoutLogPath(server));
 
     server.pid = runtime.pid;
@@ -221,11 +226,12 @@ export class ServerManager {
     server.status = "running";
     server.updated_at = new Date().toISOString();
     server.java_command = java.command;
-    addEvent(server, "core_materialized", "Core installation materialized", {
-      core_id: core.id,
-      install_dir: materialized.install_dir,
-      links: materialized.links
-    });
+    if (directPath) {
+      addEvent(server, "core_direct_path", "Server started with direct core path", {
+        core_id: server.core_id,
+        path: directPath
+      });
+    }
     addEvent(server, "started", "Server started", {
       pid: runtime.pid,
       launch_backend: runtime.backend,
@@ -236,6 +242,50 @@ export class ServerManager {
     });
     await this.store.saveServer(server);
     return server;
+  }
+
+  private async resolveCreateCore(ref: CoreRef): Promise<CoreMetadata> {
+    const directPath = directCorePath(ref);
+    if (!directPath) {
+      return resolveCore(ref, this.coreCache);
+    }
+    if (!(await pathExists(directPath))) {
+      throw new Error(`direct core path does not exist: ${directPath}`);
+    }
+    const stat = await fs.stat(directPath);
+    if (!stat.isFile()) {
+      throw new Error(`direct core path must be a file: ${directPath}`);
+    }
+    const loader = ref.loader ?? "custom";
+    const minecraftVersion = ref.minecraft_version ?? "unknown";
+    return {
+      id: sanitizeIdPart(`direct-${loader}-${minecraftVersion}-${path.basename(directPath)}`),
+      loader,
+      minecraft_version: minecraftVersion,
+      build: ref.build,
+      channel: ref.channel,
+      provider: "direct-path",
+      source: directPath,
+      file_path: directPath,
+      sha256: "",
+      checksum_source: "local",
+      size: stat.size,
+      kind: "jar",
+      launch: { type: "jar" },
+      downloaded_at: new Date().toISOString()
+    };
+  }
+
+  private async buildCachedCoreLaunchCommand(server: ServerMetadata): Promise<LaunchCommand> {
+    const core = await this.coreCache.get(server.core_id);
+    if (!core) throw new Error(`core not found: ${server.core_id}`);
+    const materialized = await this.coreInstallation.materialize(core, server);
+    addEvent(server, "core_materialized", "Core installation materialized", {
+      core_id: core.id,
+      install_dir: materialized.install_dir,
+      links: materialized.links
+    });
+    return buildLaunchCommand(server, materialized.launch);
   }
 
   async stop(id: string, timeoutMs = 15000): Promise<ServerMetadata> {
@@ -649,6 +699,7 @@ export class ServerManager {
     await ensureDir(path.join(mailboxDir, "requests"));
     await ensureDir(path.join(mailboxDir, "responses"));
     await ensureDir(path.join(mailboxDir, "tmp"));
+    await this.cleanupMailbox(mailboxDir);
     const tmpFile = path.join(mailboxDir, "tmp", `${requestId}-${crypto.randomUUID()}.json.tmp`);
     const requestFile = path.join(mailboxDir, "requests", `${requestId}.json`);
     await fs.writeFile(tmpFile, `${JSON.stringify(request, null, 2)}\n`);
@@ -669,7 +720,18 @@ export class ServerManager {
       }
       await sleep(100);
     }
+    await fs.rm(requestFile, { force: true });
     throw new Error(`debug agent response timed out after ${timeoutMs}ms; request id: ${requestId}`);
+  }
+
+  private async cleanupMailbox(mailboxDir: string): Promise<void> {
+    await ensureDir(path.join(mailboxDir, "processed"));
+    await ensureDir(path.join(mailboxDir, "rejected"));
+    await cleanupDirectory(path.join(mailboxDir, "responses"), 24 * 60 * 60 * 1000);
+    await cleanupDirectory(path.join(mailboxDir, "processed"), 24 * 60 * 60 * 1000);
+    await cleanupDirectory(path.join(mailboxDir, "rejected"), 24 * 60 * 60 * 1000);
+    await cleanupDirectory(path.join(mailboxDir, "tmp"), 60 * 60 * 1000);
+    await cleanupDirectory(path.join(mailboxDir, "requests"), 60 * 60 * 1000);
   }
 
   private async writeServerFiles(
@@ -774,6 +836,14 @@ async function buildLaunchCommand(
     return { command: process.env.ComSpec ?? "cmd.exe", args: ensureNoGui(launch.args) };
   }
   return { command: java, args: ensureNoGui(memoryArgs(server).concat(server.java_args, launch.args)) };
+}
+
+function directCorePath(ref: CoreRef): string | undefined {
+  const value = ref.direct_path?.trim();
+  if (!value) {
+    return undefined;
+  }
+  return path.resolve(value);
 }
 
 async function startServerProcess(
@@ -1091,6 +1161,27 @@ async function existingPaths(paths: string[]): Promise<string[]> {
     }
   }
   return result;
+}
+
+async function cleanupDirectory(directory: string, maxAgeMs: number): Promise<void> {
+  let entries: import("node:fs").Dirent[];
+  try {
+    entries = await fs.readdir(directory, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  const deadline = Date.now() - maxAgeMs;
+  await Promise.all(entries.map(async (entry) => {
+    const file = path.join(directory, entry.name);
+    try {
+      const stat = await fs.stat(file);
+      if (stat.mtimeMs < deadline) {
+        await fs.rm(file, { recursive: entry.isDirectory(), force: true });
+      }
+    } catch {
+      // Best-effort mailbox cleanup.
+    }
+  }));
 }
 
 function addEvent(server: ServerMetadata, type: string, message: string, data?: Record<string, unknown>): void {

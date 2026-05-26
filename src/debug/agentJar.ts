@@ -7,7 +7,7 @@ import { pathExists } from "../lib/fsx.js";
 export async function getAgentJar(options: { rebuild?: boolean } = {}): Promise<string> {
   const root = projectRoot();
   const agentDir = path.join(root, "agent");
-  const jar = path.join(agentDir, "build", "libs", "craft-runner-agent-1.0.0.jar");
+  const jar = path.join(agentDir, "build", "libs", "craft-runner-agent-1.0.1.jar");
   if (options.rebuild || !(await pathExists(jar))) {
     await runGradle(agentDir);
   }

@@ -18,6 +18,7 @@ export type CoreRef = {
   channel?: string;
   path?: string;
   url?: string;
+  direct_path?: string;
 };
 
 export type CoreMetadata = {

@@ -8,13 +8,14 @@ import { RemoteBridge } from "../remote/bridge.js";
 import fs from "node:fs/promises";
 
 const CoreRefSchema = z.object({
-  core_id: z.string().optional(),
-  loader: z.string().optional(),
-  minecraft_version: z.string().optional(),
-  build: z.string().optional(),
-  channel: z.string().optional(),
-  path: z.string().optional(),
-  url: z.string().optional()
+  core_id: z.string().describe("Existing cached core id from list_cores. Use this when the core is already managed by craft-runner.").optional(),
+  loader: z.string().describe("Server loader/provider, e.g. vanilla, paper, folia, purpur, fabric, forge, neoforge, spigot, craftbukkit, or custom.").optional(),
+  minecraft_version: z.string().describe("Minecraft version for provider resolution and Java compatibility checks. Required unless using a cached core_id with metadata.").optional(),
+  build: z.string().describe("Provider build/version selector, or latest where supported.").optional(),
+  channel: z.string().describe("Optional provider channel selector where supported.").optional(),
+  path: z.string().describe("Local jar path to import into craft-runner's shared core cache before use. For remote_host calls this local file is uploaded to the remote bridge as an imported cached core.").optional(),
+  url: z.string().describe("HTTPS URL to download/import into craft-runner's shared core cache before use.").optional(),
+  direct_path: z.string().describe("Existing server jar path on the execution host. This bypasses core cache import/upload and is launched directly with java -jar. For remote_host calls this path must exist on the remote host.").optional()
 });
 
 const JsonRecordSchema = z.record(z.string(), z.union([z.string(), z.number(), z.boolean()]));
@@ -22,7 +23,7 @@ const JsonRecordSchema = z.record(z.string(), z.union([z.string(), z.number(), z
 export function createMcpServer(manager = new ServerManager()): McpServer {
   const server = new McpServer({
     name: "craft-runner",
-    version: "1.0.0"
+    version: "1.0.1"
   });
 
   const tool = <T extends z.ZodRawShape>(
@@ -48,7 +49,7 @@ export function createMcpServer(manager = new ServerManager()): McpServer {
     );
   };
 
-  tool("create_server", "Create a local Minecraft server.", {
+  tool("create_server", "Create a local Minecraft server. core_ref.path imports a jar into the shared core cache; core_ref.direct_path points at an existing jar on the execution host and bypasses core cache import/upload.", {
     id: z.string().optional(),
     core_ref: CoreRefSchema,
     base_dir: z.string().optional(),
