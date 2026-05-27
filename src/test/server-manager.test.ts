@@ -3,9 +3,12 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import { promisify } from "node:util";
 import { ServerManager } from "../server/manager.js";
 import { CraftRunnerConfig } from "../lib/types.js";
+
+const execFileAsync = promisify(execFile);
 
 test("ServerManager creates server, writes files, injects files, and reads log ranges", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "craft-runner-test-"));
@@ -354,7 +357,8 @@ test("ServerManager prefers tmux sessions and marks manually killed sessions sto
 
     const command = await fs.readFile(path.join(tmuxState, `${started.tmux_session}.cmd`), "utf8");
     assert.match(command, /nogui/);
-    assert.match(command, /cat .*console\.stdin/);
+    assert.match(command, /exec 3<> .*console\.stdin/);
+    assert.match(command, /< .*console\.stdin/);
     assert.match(command, /CRAFT_RUNNER_SERVER_ID/);
 
     const stopLine = readFirstLine(started.console_stdin_path!);
@@ -377,6 +381,69 @@ test("ServerManager prefers tmux sessions and marks manually killed sessions sto
       delete process.env.CRAFT_FAKE_TMUX_STATE;
     } else {
       process.env.CRAFT_FAKE_TMUX_STATE = previousTmuxState;
+    }
+  }
+});
+
+test("ServerManager tmux stop exits promptly even when pane is in copy mode", { skip: process.platform === "win32" }, async (t) => {
+  if (!(await realTmuxAvailable())) {
+    t.skip("tmux is not available");
+    return;
+  }
+
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "craft-runner-real-tmux-test-"));
+  const fakeCore = path.join(root, "fake-server.jar");
+  const fakeJava = path.join(root, "fake-java");
+  const javaLog = path.join(root, "fake-java.log");
+  const javaPid = path.join(root, "fake-java.pid");
+  await fs.writeFile(fakeCore, "fake jar");
+  await writeStoppableFakeJava(fakeJava);
+
+  const previousLog = process.env.CRAFT_FAKE_JAVA_LOG;
+  const previousPid = process.env.CRAFT_FAKE_JAVA_PID;
+  process.env.CRAFT_FAKE_JAVA_LOG = javaLog;
+  process.env.CRAFT_FAKE_JAVA_PID = javaPid;
+  let session: string | undefined;
+  try {
+    const manager = new ServerManager(testConfig(root));
+    const server = await manager.create({
+      id: "real-tmux-copy-mode-test",
+      java_ref: `path:${fakeJava}`,
+      core_ref: {
+        loader: "custom",
+        minecraft_version: "1.20.4",
+        direct_path: fakeCore
+      }
+    });
+
+    const started = await manager.start(server.id);
+    assert.equal(started.launch_backend, "tmux");
+    session = started.tmux_session;
+    assert.ok(session);
+    await waitForFile(javaPid);
+
+    await execFileAsync("tmux", ["copy-mode", "-t", session]);
+    const startedStoppingAt = Date.now();
+    const stopped = await manager.stop(server.id, 3000);
+    const elapsed = Date.now() - startedStoppingAt;
+
+    assert.equal(stopped.status, "stopped");
+    assert.equal(elapsed < 2500, true, `stop should not wait for timeout; elapsed=${elapsed}ms`);
+    assert.match(await fs.readFile(javaLog, "utf8"), /STOP_SEEN/);
+    assert.equal(await realTmuxSessionExists(session), false);
+  } finally {
+    if (session && await realTmuxSessionExists(session)) {
+      await execFileAsync("tmux", ["kill-session", "-t", session]).catch(() => undefined);
+    }
+    if (previousLog === undefined) {
+      delete process.env.CRAFT_FAKE_JAVA_LOG;
+    } else {
+      process.env.CRAFT_FAKE_JAVA_LOG = previousLog;
+    }
+    if (previousPid === undefined) {
+      delete process.env.CRAFT_FAKE_JAVA_PID;
+    } else {
+      process.env.CRAFT_FAKE_JAVA_PID = previousPid;
     }
   }
 });
@@ -462,7 +529,7 @@ function testConfig(root: string): CraftRunnerConfig {
     agents_dir: path.join(root, "home", "agents"),
     server_base_dir: path.join(root, "servers-base"),
     state_dir: path.join(root, "state"),
-    user_agent: "craft-runner-test/1.0.1",
+    user_agent: "craft-runner-test/1.0.2",
     ports: {
       minecraft_start: 41000,
       minecraft_end: 41020,
@@ -526,6 +593,32 @@ async function writeFakeJava(target: string): Promise<void> {
   await fs.chmod(target, 0o755);
 }
 
+async function writeStoppableFakeJava(target: string): Promise<void> {
+  await fs.writeFile(target, [
+    `#!${process.execPath}`,
+    "const fs = require('fs');",
+    "const args = process.argv.slice(2);",
+    "if (args.includes('-version')) {",
+    "  process.stderr.write('openjdk version \"21.0.1\"\\n');",
+    "  process.exit(0);",
+    "}",
+    "fs.writeFileSync(process.env.CRAFT_FAKE_JAVA_PID, String(process.pid));",
+    "fs.appendFileSync(process.env.CRAFT_FAKE_JAVA_LOG, `START ${process.pid}\\n`);",
+    "process.stdin.setEncoding('utf8');",
+    "process.stdin.on('data', chunk => {",
+    "  fs.appendFileSync(process.env.CRAFT_FAKE_JAVA_LOG, `STDIN ${JSON.stringify(chunk)}\\n`);",
+    "  if (chunk.includes('stop')) {",
+    "    fs.appendFileSync(process.env.CRAFT_FAKE_JAVA_LOG, 'STOP_SEEN\\n');",
+    "    process.exit(0);",
+    "  }",
+    "});",
+    "process.on('SIGTERM', () => { fs.appendFileSync(process.env.CRAFT_FAKE_JAVA_LOG, 'SIGTERM\\n'); process.exit(0); });",
+    "process.on('SIGINT', () => { fs.appendFileSync(process.env.CRAFT_FAKE_JAVA_LOG, 'SIGINT\\n'); process.exit(0); });",
+    "setInterval(() => {}, 1000);"
+  ].join("\n"));
+  await fs.chmod(target, 0o755);
+}
+
 async function writeFakeTmux(target: string): Promise<void> {
   await fs.writeFile(target, [
     `#!${process.execPath}`,
@@ -569,6 +662,24 @@ async function waitForFile(file: string): Promise<string> {
     }
   }
   throw new Error(`file was not written: ${file}`);
+}
+
+async function realTmuxAvailable(): Promise<boolean> {
+  try {
+    await execFileAsync("tmux", ["-V"], { timeout: 3000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function realTmuxSessionExists(session: string): Promise<boolean> {
+  try {
+    await execFileAsync("tmux", ["has-session", "-t", session], { timeout: 3000 });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function sleep(ms: number): Promise<void> {

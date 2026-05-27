@@ -42,7 +42,7 @@ export function loadConfig(): CraftRunnerConfig {
     state_dir: stateDir,
     user_agent:
       process.env.CRAFT_RUNNER_USER_AGENT ??
-      "craft-runner/1.0.1 (https://github.com/Score2/craft-runner)",
+      "craft-runner/1.0.2 (https://github.com/Score2/craft-runner)",
     ports: {
       minecraft_start: Number(process.env.CRAFT_RUNNER_MC_PORT_START ?? 40000),
       minecraft_end: Number(process.env.CRAFT_RUNNER_MC_PORT_END ?? 49999),

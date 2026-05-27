@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "craft_runner_agent",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "name": "Craft Runner Agent",
   "description": "Local craft-runner debug bridge for executing JavaScript through a file mailbox.",
   "authors": [

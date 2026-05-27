@@ -40,7 +40,7 @@ function testConfig(root: string): CraftRunnerConfig {
     agents_dir: path.join(root, "home", "agents"),
     server_base_dir: path.join(root, "servers"),
     state_dir: path.join(root, "state"),
-    user_agent: "craft-runner-test/1.0.1",
+    user_agent: "craft-runner-test/1.0.2",
     ports: {
       minecraft_start: 41000,
       minecraft_end: 41020,

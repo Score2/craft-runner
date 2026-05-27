@@ -880,7 +880,11 @@ async function startInTmux(
   const shellCommand = [
     `export JAVA=${shellQuote(javaCommand)}`,
     `export CRAFT_RUNNER_SERVER_ID=${shellQuote(server.id)}`,
-    `while true; do cat ${shellQuote(consoleStdinPath)}; done | ${shellJoin([command.command, ...command.args])} >> ${shellQuote(stdoutPath)} 2>&1`
+    `exec 3<> ${shellQuote(consoleStdinPath)}`,
+    `${shellJoin([command.command, ...command.args])} < ${shellQuote(consoleStdinPath)} >> ${shellQuote(stdoutPath)} 2>&1`,
+    "status=$?",
+    "exec 3>&-",
+    "exit $status"
   ].join("; ");
   await execFileAsync("tmux", [
     "new-session",

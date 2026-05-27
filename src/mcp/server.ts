@@ -23,7 +23,7 @@ const JsonRecordSchema = z.record(z.string(), z.union([z.string(), z.number(), z
 export function createMcpServer(manager = new ServerManager()): McpServer {
   const server = new McpServer({
     name: "craft-runner",
-    version: "1.0.1"
+    version: "1.0.2"
   });
 
   const tool = <T extends z.ZodRawShape>(

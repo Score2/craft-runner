@@ -21,7 +21,7 @@ import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 @Plugin(
     id = "craft-runner-agent",
     name = "CraftRunnerAgent",
-    version = "1.0.1",
+    version = "1.0.2",
     description = "Local craft-runner debug bridge for executing JavaScript through a file mailbox.",
     authors = {"Score2"}
 )
