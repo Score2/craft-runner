@@ -5,6 +5,7 @@ import { CORE_PROVIDERS, resolveCore, searchCores } from "../core/providers.js";
 import { getJavaInfo, listJavaInstallations, validateJavaForMinecraft } from "../java/discovery.js";
 import { getAgentJar } from "../debug/agentJar.js";
 import { RemoteBridge } from "../remote/bridge.js";
+import { packageInfo } from "../lib/packageInfo.js";
 import fs from "node:fs/promises";
 
 const CoreRefSchema = z.object({
@@ -23,7 +24,7 @@ const JsonRecordSchema = z.record(z.string(), z.union([z.string(), z.number(), z
 export function createMcpServer(manager = new ServerManager()): McpServer {
   const server = new McpServer({
     name: "craft-runner",
-    version: "1.0.2"
+    version: packageInfo().version
   });
 
   const tool = <T extends z.ZodRawShape>(
@@ -217,7 +218,14 @@ export function createMcpServer(manager = new ServerManager()): McpServer {
   tool("debug_install_agent", "Install the multi-platform JS debug agent into a local test server.", {
     server_id: z.string(),
     rebuild: z.boolean().optional()
-  }, async (args) => manager.installDebugAgent(args.server_id, await getAgentJar({ rebuild: args.rebuild })));
+  }, async (args) => {
+    const target = await manager.get(args.server_id);
+    return manager.installDebugAgent(args.server_id, await getAgentJar({
+      rebuild: args.rebuild,
+      loader: target.loader,
+      minecraft_version: target.minecraft_version
+    }));
+  });
 
   tool("debug_agent_status", "Inspect debug agent mailbox status for a local test server.", {
     server_id: z.string()

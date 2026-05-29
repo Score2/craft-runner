@@ -1,5 +1,0 @@
-name: CraftRunnerAgent
-main: io.insinuate.score2.craftrunner.agent.platform.bungee.CraftRunnerBungeePlugin
-version: 1.0.2
-author: Score2
-description: Local craft-runner debug bridge for executing JavaScript through a file mailbox.

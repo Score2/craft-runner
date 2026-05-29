@@ -1,0 +1,10 @@
+modLoader = "javafml"
+loaderVersion = "[47,)"
+license = "MIT"
+
+[[mods]]
+modId = "craft_runner_agent"
+version = "${version}"
+displayName = "Craft Runner Agent"
+authors = "Score2"
+description = "Local craft-runner debug bridge for executing JavaScript through a file mailbox."

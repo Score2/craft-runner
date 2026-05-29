@@ -1,6 +1,8 @@
 docs/
 dist/
 node_modules/
+.DS_Store
 *.tgz
 agent/build/
+agent/*/build/
 agent/.gradle/

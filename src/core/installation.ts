@@ -63,7 +63,7 @@ export class CoreInstallationManager {
   async materialize(core: CoreMetadata, server: ServerMetadata): Promise<MaterializedCore> {
     const prepared = await this.prepare(core, server.java_ref ?? "system");
     const links: MaterializedCore["links"] = [];
-    for (const entry of SHAREABLE_ENTRIES) {
+    for (const entry of await shareableEntries(core, prepared.install_dir)) {
       const source = path.join(prepared.install_dir, entry);
       if (!(await pathExists(source))) continue;
       const target = path.join(server.server_dir, entry);
@@ -115,6 +115,10 @@ export class CoreInstallationManager {
       }
       const runSh = path.join(installDir, "run.sh");
       if (process.platform !== "win32" && await pathExists(runSh)) {
+        const unixArgs = await findFirstFile(installDir, "unix_args.txt");
+        if (unixArgs) {
+          return { command: "java", args: ["@user_jvm_args.txt", `@${path.relative(installDir, unixArgs)}`, "nogui"], cwd: installDir };
+        }
         return { command: "sh", args: ["run.sh", "nogui"], cwd: installDir };
       }
       const jar = await findFirstJar(installDir, ["forge-", "neoforge-"]);
@@ -133,6 +137,25 @@ export class CoreInstallationManager {
   private async launchExists(manifest: { core_id?: string }): Promise<boolean> {
     return Boolean(manifest.core_id);
   }
+}
+
+async function shareableEntries(core: CoreMetadata, installDir: string): Promise<string[]> {
+  const entries = [...SHAREABLE_ENTRIES];
+  if (core.kind === "installer") {
+    for (const entry of await fs.readdir(installDir, { withFileTypes: true })) {
+      if (
+        entry.isFile() &&
+        entry.name.endsWith(".jar") &&
+        !["installer.jar", "server.jar"].includes(entry.name)
+      ) {
+        entries.push(entry.name);
+      }
+    }
+  }
+  if (core.loader === "fabric") {
+    return entries.filter((entry) => !["libraries", "cache", ".fabric"].includes(entry));
+  }
+  return entries;
 }
 
 async function withPrepareLock<T>(lockDir: string, fn: () => Promise<T>): Promise<T> {
@@ -212,6 +235,20 @@ async function findFirstJar(dir: string, prefixes: string[]): Promise<string | u
     }
     if (entry.isDirectory() && entry.name !== "libraries") {
       const found = await findFirstJar(full, prefixes);
+      if (found) return found;
+    }
+  }
+  return undefined;
+}
+
+async function findFirstFile(dir: string, fileName: string): Promise<string | undefined> {
+  for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isFile() && entry.name === fileName) {
+      return full;
+    }
+    if (entry.isDirectory()) {
+      const found = await findFirstFile(full, fileName);
       if (found) return found;
     }
   }

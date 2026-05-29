@@ -52,7 +52,6 @@ jobs:
           version="$(node -p "require('./package.json').version")"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "tag=v${version}" >> "$GITHUB_OUTPUT"
-          echo "agent_jar=agent/build/libs/craft-runner-agent-${version}.jar" >> "$GITHUB_OUTPUT"
 
       - name: Publish
         run: npm publish --access public
@@ -62,15 +61,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.package.outputs.tag }}
           VERSION: ${{ steps.package.outputs.version }}
-          AGENT_JAR: ${{ steps.package.outputs.agent_jar }}
         shell: bash
         run: |
-          test -f "$AGENT_JAR"
+          mapfile -t AGENT_JARS < <(find agent/build/libs -maxdepth 1 -type f -name 'craft-runner-agent-*.jar' | sort)
+          test "${#AGENT_JARS[@]}" -gt 0
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "$AGENT_JAR#craft-runner-agent-${VERSION}.jar" --clobber
+            gh release upload "$TAG" "${AGENT_JARS[@]}" --clobber
           else
-            gh release create "$TAG" "$AGENT_JAR#craft-runner-agent-${VERSION}.jar" \
+            gh release create "$TAG" "${AGENT_JARS[@]}" \
               --target "$GITHUB_SHA" \
               --title "craft-runner ${VERSION}" \
-              --notes "Published npm package @score2/craft-runner@${VERSION}. Agent jar is attached for manual server installation."
+              --notes "Published npm package @score2/craft-runner@${VERSION}. Platform-specific agent jars are attached for manual server installation."
           fi

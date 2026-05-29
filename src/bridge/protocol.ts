@@ -7,6 +7,7 @@ import { CORE_PROVIDERS, resolveCore, searchCores } from "../core/providers.js";
 import { getJavaInfo, listJavaInstallations, validateJavaForMinecraft } from "../java/discovery.js";
 import { getAgentJar } from "../debug/agentJar.js";
 import { ensureDir } from "../lib/fsx.js";
+import { packageInfo } from "../lib/packageInfo.js";
 
 export const BRIDGE_PROTOCOL = {
   major: 1,
@@ -14,7 +15,7 @@ export const BRIDGE_PROTOCOL = {
 } as const;
 
 export const PACKAGE_NAME = "@score2/craft-runner";
-export const PACKAGE_VERSION = "1.0.2";
+export const PACKAGE_VERSION = packageInfo().version;
 
 export type BridgeVersion = {
   name: string;
@@ -181,8 +182,14 @@ export async function dispatchBridgeTool(
       return getJavaInfo(clean.java_ref ?? "system");
     case "validate_java_for_core":
       return validateJavaForMinecraft(clean.java_ref, required(clean.minecraft_version, "minecraft_version"));
-    case "debug_install_agent":
-      return manager.installDebugAgent(required(clean.server_id, "server_id"), await getAgentJar({ rebuild: clean.rebuild }));
+    case "debug_install_agent": {
+      const server = await manager.get(required(clean.server_id, "server_id"));
+      return manager.installDebugAgent(server.id, await getAgentJar({
+        rebuild: clean.rebuild,
+        loader: server.loader,
+        minecraft_version: server.minecraft_version
+      }));
+    }
     case "debug_agent_status":
       return manager.debugAgentStatus(required(clean.server_id, "server_id"));
     case "debug_discover_agents":

@@ -2,6 +2,7 @@ import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
 import { CraftRunnerConfig } from "./types.js";
+import { packageInfo } from "./packageInfo.js";
 
 function rootDir(): string {
   if (process.env.CRAFT_RUNNER_HOME) {
@@ -42,7 +43,7 @@ export function loadConfig(): CraftRunnerConfig {
     state_dir: stateDir,
     user_agent:
       process.env.CRAFT_RUNNER_USER_AGENT ??
-      "craft-runner/1.0.2 (https://github.com/Score2/craft-runner)",
+      `craft-runner/${packageInfo().version} (https://github.com/Score2/craft-runner)`,
     ports: {
       minecraft_start: Number(process.env.CRAFT_RUNNER_MC_PORT_START ?? 40000),
       minecraft_end: Number(process.env.CRAFT_RUNNER_MC_PORT_END ?? 49999),

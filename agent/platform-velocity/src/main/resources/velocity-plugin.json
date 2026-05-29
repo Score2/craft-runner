@@ -1,0 +1,10 @@
+{
+  "id": "craft-runner-agent",
+  "name": "CraftRunnerAgent",
+  "version": "${version}",
+  "description": "Local craft-runner debug bridge for executing JavaScript through a file mailbox.",
+  "authors": [
+    "Score2"
+  ],
+  "main": "io.insinuate.score2.craftrunner.agent.platform.velocity.CraftRunnerVelocityPlugin"
+}

@@ -357,8 +357,8 @@ test("ServerManager prefers tmux sessions and marks manually killed sessions sto
 
     const command = await fs.readFile(path.join(tmuxState, `${started.tmux_session}.cmd`), "utf8");
     assert.match(command, /nogui/);
-    assert.match(command, /exec 3<> .*console\.stdin/);
-    assert.match(command, /< .*console\.stdin/);
+    assert.match(command, /CRAFT_RUNNER_CONSOLE_STDIN=.*console\.stdin/);
+    assert.match(command, /CRAFT_RUNNER_COMMAND_JSON=/);
     assert.match(command, /CRAFT_RUNNER_SERVER_ID/);
 
     const stopLine = readFirstLine(started.console_stdin_path!);
@@ -397,12 +397,8 @@ test("ServerManager tmux stop exits promptly even when pane is in copy mode", { 
   const javaLog = path.join(root, "fake-java.log");
   const javaPid = path.join(root, "fake-java.pid");
   await fs.writeFile(fakeCore, "fake jar");
-  await writeStoppableFakeJava(fakeJava);
+  await writeStoppableFakeJava(fakeJava, javaLog, javaPid);
 
-  const previousLog = process.env.CRAFT_FAKE_JAVA_LOG;
-  const previousPid = process.env.CRAFT_FAKE_JAVA_PID;
-  process.env.CRAFT_FAKE_JAVA_LOG = javaLog;
-  process.env.CRAFT_FAKE_JAVA_PID = javaPid;
   let session: string | undefined;
   try {
     const manager = new ServerManager(testConfig(root));
@@ -434,16 +430,6 @@ test("ServerManager tmux stop exits promptly even when pane is in copy mode", { 
   } finally {
     if (session && await realTmuxSessionExists(session)) {
       await execFileAsync("tmux", ["kill-session", "-t", session]).catch(() => undefined);
-    }
-    if (previousLog === undefined) {
-      delete process.env.CRAFT_FAKE_JAVA_LOG;
-    } else {
-      process.env.CRAFT_FAKE_JAVA_LOG = previousLog;
-    }
-    if (previousPid === undefined) {
-      delete process.env.CRAFT_FAKE_JAVA_PID;
-    } else {
-      process.env.CRAFT_FAKE_JAVA_PID = previousPid;
     }
   }
 });
@@ -593,27 +579,29 @@ async function writeFakeJava(target: string): Promise<void> {
   await fs.chmod(target, 0o755);
 }
 
-async function writeStoppableFakeJava(target: string): Promise<void> {
+async function writeStoppableFakeJava(target: string, logPath: string, pidPath: string): Promise<void> {
   await fs.writeFile(target, [
     `#!${process.execPath}`,
     "const fs = require('fs');",
+    `const logPath = ${JSON.stringify(logPath)};`,
+    `const pidPath = ${JSON.stringify(pidPath)};`,
     "const args = process.argv.slice(2);",
     "if (args.includes('-version')) {",
     "  process.stderr.write('openjdk version \"21.0.1\"\\n');",
     "  process.exit(0);",
     "}",
-    "fs.writeFileSync(process.env.CRAFT_FAKE_JAVA_PID, String(process.pid));",
-    "fs.appendFileSync(process.env.CRAFT_FAKE_JAVA_LOG, `START ${process.pid}\\n`);",
+    "fs.writeFileSync(pidPath, String(process.pid));",
+    "fs.appendFileSync(logPath, `START ${process.pid}\\n`);",
     "process.stdin.setEncoding('utf8');",
     "process.stdin.on('data', chunk => {",
-    "  fs.appendFileSync(process.env.CRAFT_FAKE_JAVA_LOG, `STDIN ${JSON.stringify(chunk)}\\n`);",
+    "  fs.appendFileSync(logPath, `STDIN ${JSON.stringify(chunk)}\\n`);",
     "  if (chunk.includes('stop')) {",
-    "    fs.appendFileSync(process.env.CRAFT_FAKE_JAVA_LOG, 'STOP_SEEN\\n');",
+    "    fs.appendFileSync(logPath, 'STOP_SEEN\\n');",
     "    process.exit(0);",
     "  }",
     "});",
-    "process.on('SIGTERM', () => { fs.appendFileSync(process.env.CRAFT_FAKE_JAVA_LOG, 'SIGTERM\\n'); process.exit(0); });",
-    "process.on('SIGINT', () => { fs.appendFileSync(process.env.CRAFT_FAKE_JAVA_LOG, 'SIGINT\\n'); process.exit(0); });",
+    "process.on('SIGTERM', () => { fs.appendFileSync(logPath, 'SIGTERM\\n'); process.exit(0); });",
+    "process.on('SIGINT', () => { fs.appendFileSync(logPath, 'SIGINT\\n'); process.exit(0); });",
     "setInterval(() => {}, 1000);"
   ].join("\n"));
   await fs.chmod(target, 0o755);
@@ -637,7 +625,7 @@ async function writeFakeTmux(target: string): Promise<void> {
     "  fs.writeFileSync(path.join(state, session + '.cmd'), args[args.length - 1]);",
     "  process.exit(0);",
     "}",
-    "if (args[0] === 'display-message') { console.log('424242'); process.exit(0); }",
+    "if (args[0] === 'display-message') { console.log(String(process.ppid)); process.exit(0); }",
     "if (args[0] === 'kill-session') { fs.rmSync(path.join(state, valueAfter('-t')), { force: true }); process.exit(0); }",
     "process.exit(1);"
   ].join("\n"));

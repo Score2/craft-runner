@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "craft_runner_agent",
+  "version": "${version}",
+  "name": "Craft Runner Agent",
+  "description": "Local craft-runner debug bridge for executing JavaScript through a file mailbox.",
+  "authors": [
+    "Score2"
+  ],
+  "environment": "server",
+  "entrypoints": {
+    "server": [
+      "io.insinuate.score2.craftrunner.agent.platform.fabric.CraftRunnerFabricMod"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": ">=1.20"
+  }
+}

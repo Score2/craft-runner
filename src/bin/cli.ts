@@ -53,7 +53,12 @@ async function run(domain: string | undefined, action: string | undefined, args:
   if (domain === "completion" && action === "zsh") return zshCompletion();
   if (domain === "completion" && action === "install") return installCompletion(required(args[0], "shell"), args.slice(1));
   if (domain === "debug" && action === "install-agent") {
-    return manager.installDebugAgent(required(args[0], "server id"), await getAgentJar({ rebuild: args.includes("--rebuild") }));
+    const server = await manager.get(required(args[0], "server id"));
+    return manager.installDebugAgent(server.id, await getAgentJar({
+      rebuild: args.includes("--rebuild"),
+      loader: server.loader,
+      minecraft_version: server.minecraft_version
+    }));
   }
   if (domain === "debug" && action === "status") return manager.debugAgentStatus(required(args[0], "server id"));
   if (domain === "debug" && action === "discover-agents") return manager.discoverDebugAgents();

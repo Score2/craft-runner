@@ -876,15 +876,19 @@ async function startInTmux(
     throw new Error(`tmux session already exists: ${session}`);
   }
   const consoleStdinPath = server.console_stdin_path ?? path.join(server.server_dir, ".craft-runner", "console.stdin");
+  const processPidPath = path.join(server.server_dir, ".craft-runner", "server.pid");
   await createNamedPipe(consoleStdinPath);
+  await fs.rm(processPidPath, { force: true });
+  const commandJson = JSON.stringify({ command: command.command, args: command.args });
   const shellCommand = [
+    ...craftRunnerEnvironmentExports(),
+    ...agentEnvironmentExports(server),
     `export JAVA=${shellQuote(javaCommand)}`,
     `export CRAFT_RUNNER_SERVER_ID=${shellQuote(server.id)}`,
-    `exec 3<> ${shellQuote(consoleStdinPath)}`,
-    `${shellJoin([command.command, ...command.args])} < ${shellQuote(consoleStdinPath)} >> ${shellQuote(stdoutPath)} 2>&1`,
-    "status=$?",
-    "exec 3>&-",
-    "exit $status"
+    `export CRAFT_RUNNER_CONSOLE_STDIN=${shellQuote(consoleStdinPath)}`,
+    `export CRAFT_RUNNER_SERVER_PID_FILE=${shellQuote(processPidPath)}`,
+    `export CRAFT_RUNNER_COMMAND_JSON=${shellQuote(commandJson)}`,
+    `${shellJoin([process.execPath, "-e", consoleRelayScript()])} >> ${shellQuote(stdoutPath)} 2>&1`
   ].join("; ");
   await execFileAsync("tmux", [
     "new-session",
@@ -895,16 +899,18 @@ async function startInTmux(
     server.server_dir,
     shellCommand
   ], {
-    env: {
-      ...process.env,
-      JAVA: javaCommand,
-      CRAFT_RUNNER_SERVER_ID: server.id
-    },
+      env: {
+        ...process.env,
+        JAVA: javaCommand,
+        CRAFT_RUNNER_SERVER_ID: server.id,
+        ...agentProcessEnv(server)
+      },
     timeout: 10000
   });
+  const pid = await waitForPidFile(processPidPath, 1000) ?? await tmuxPanePid(session);
   return {
     backend: "tmux",
-    pid: await tmuxPanePid(session),
+    pid,
     tmux_session: session,
     console_stdin_path: consoleStdinPath
   };
@@ -926,7 +932,8 @@ function startInBackground(
       env: {
         ...process.env,
         JAVA: javaCommand,
-        CRAFT_RUNNER_SERVER_ID: server.id
+        CRAFT_RUNNER_SERVER_ID: server.id,
+        ...agentProcessEnv(server)
       }
     });
     child.unref();
@@ -937,6 +944,30 @@ function startInBackground(
   }
 }
 
+function consoleRelayScript(): string {
+  return [
+    "const fs=require('fs');",
+    "const cp=require('child_process');",
+    "const spec=JSON.parse(process.env.CRAFT_RUNNER_COMMAND_JSON);",
+    "const fifo=process.env.CRAFT_RUNNER_CONSOLE_STDIN;",
+    "const pidFile=process.env.CRAFT_RUNNER_SERVER_PID_FILE;",
+    "let alive=true;",
+    "const child=cp.spawn(spec.command,spec.args,{cwd:process.cwd(),env:process.env,stdio:['pipe','inherit','inherit']});",
+    "if(pidFile)fs.writeFileSync(pidFile,String(child.pid));",
+    "function open(){",
+    " if(!alive)return;",
+    " const stream=fs.createReadStream(fifo);",
+    " stream.on('data',chunk=>{if(!child.stdin.destroyed)child.stdin.write(chunk);});",
+    " stream.on('error',error=>{if(alive&&error.code!=='ENOENT')console.error(error);});",
+    " stream.on('close',()=>{if(alive)setTimeout(open,10);});",
+    "}",
+    "open();",
+    "child.on('exit',(code,signal)=>{alive=false;process.exit(code??(signal?128:0));});",
+    "process.on('SIGTERM',()=>child.kill('SIGTERM'));",
+    "process.on('SIGINT',()=>child.kill('SIGINT'));"
+  ].join("");
+}
+
 async function stopServerProcess(server: ServerMetadata, timeoutMs: number): Promise<void> {
   if (await isTmuxServerRunning(server)) {
     try {
@@ -945,12 +976,15 @@ async function stopServerProcess(server: ServerMetadata, timeoutMs: number): Pro
       // Session may already be gone or the console reader may have exited.
     }
     const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline && await tmuxSessionExists(server.tmux_session!)) {
+    while (Date.now() < deadline && await isTmuxServerRunning(server)) {
       await sleep(250);
     }
     if (await tmuxSessionExists(server.tmux_session!)) {
       await tmuxKillSession(server.tmux_session!);
     }
+    return;
+  }
+  if (server.launch_backend === "tmux") {
     return;
   }
   if (server.pid && isProcessAlive(server.pid)) {
@@ -982,6 +1016,9 @@ async function killServerProcess(server: ServerMetadata): Promise<void> {
     }
     return;
   }
+  if (server.launch_backend === "tmux") {
+    return;
+  }
   if (server.pid && isProcessAlive(server.pid)) {
     try {
       process.kill(server.pid, "SIGKILL");
@@ -996,6 +1033,9 @@ async function killServerProcess(server: ServerMetadata): Promise<void> {
 }
 
 async function isServerProcessRunning(server: ServerMetadata): Promise<boolean> {
+  if (server.launch_backend === "tmux") {
+    return isTmuxServerRunning(server);
+  }
   if (await isTmuxServerRunning(server)) {
     return true;
   }
@@ -1043,7 +1083,13 @@ function parseEndpointTime(value?: string): number | undefined {
 }
 
 async function isTmuxServerRunning(server: ServerMetadata): Promise<boolean> {
-  return Boolean(server.launch_backend === "tmux" && server.tmux_session && await tmuxSessionExists(server.tmux_session));
+  if (server.launch_backend !== "tmux" || !server.tmux_session || !(await tmuxSessionExists(server.tmux_session))) {
+    return false;
+  }
+  if (server.pid && !isProcessAlive(server.pid)) {
+    return false;
+  }
+  return true;
 }
 
 async function writeConsoleCommand(server: ServerMetadata, command: string): Promise<void> {
@@ -1107,6 +1153,25 @@ async function tmuxPanePid(session: string): Promise<number | undefined> {
   }
 }
 
+async function waitForPidFile(file: string, timeoutMs: number): Promise<number | undefined> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const value = await fs.readFile(file, "utf8");
+      const pid = Number(value.trim());
+      if (Number.isFinite(pid) && pid > 0) {
+        return pid;
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw error;
+      }
+    }
+    await sleep(25);
+  }
+  return undefined;
+}
+
 async function tmuxKillSession(session: string): Promise<void> {
   try {
     await execFileAsync("tmux", ["kill-session", "-t", session], { timeout: 3000 });
@@ -1129,6 +1194,30 @@ function ensureNoGui(args: string[]): string[] {
 
 function shellJoin(args: string[]): string {
   return args.map(shellQuote).join(" ");
+}
+
+function craftRunnerEnvironmentExports(): string[] {
+  return Object.entries(process.env)
+    .filter(([key, value]) => key.startsWith("CRAFT_RUNNER_") && /^[A-Z0-9_]+$/.test(key) && value !== undefined)
+    .map(([key, value]) => `export ${key}=${shellQuote(value!)}`);
+}
+
+function agentEnvironmentExports(server: ServerMetadata): string[] {
+  return Object.entries(agentProcessEnv(server)).map(([key, value]) => `export ${key}=${shellQuote(value)}`);
+}
+
+function agentProcessEnv(server: ServerMetadata): Record<string, string> {
+  const env: Record<string, string> = {};
+  if (server.debug_agent?.endpoint_name) {
+    env.CRAFT_RUNNER_AGENT_ENDPOINT_NAME = server.debug_agent.endpoint_name;
+  }
+  if (server.debug_agent?.mailbox_dir) {
+    env.CRAFT_RUNNER_AGENTS_DIR = path.dirname(server.debug_agent.mailbox_dir);
+  }
+  if (server.debug_agent?.token) {
+    env.CRAFT_RUNNER_AGENT_TOKEN = server.debug_agent.token;
+  }
+  return env;
 }
 
 function shellQuote(value: string): string {

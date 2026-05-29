@@ -153,7 +153,11 @@ GitHub Actions runs regression tests on pushes and pull requests. npm publishing
 is intentionally gated: the publish workflow runs only when manually dispatched
 or when the pushed commit message contains `[npm publish]`. The same workflow
 also creates or updates the matching GitHub Release (`v<package version>`) and
-attaches `craft-runner-agent-<version>.jar` for manual server installation.
+attaches platform-specific `craft-runner-agent-*.jar` files for manual server
+installation. MCP-managed servers select the matching agent jar automatically
+from the server loader and Minecraft version. Bukkit-family servers share one
+Java 17-compatible jar; Forge and NeoForge keep legacy/modern jars where loader
+metadata and compile-time API boundaries differ.
 
 For npm Trusted Publishing, configure npm to trust:
 

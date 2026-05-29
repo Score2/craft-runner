@@ -33,6 +33,54 @@ test("core installation prepares direct jars and materializes shareable dirs", a
   assert.equal(listed[0].id, core.id);
 });
 
+test("installer core materialization includes root launch jars used by argfiles", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "craft-runner-core-install-"));
+  const cache = new CoreCache(testConfig(root));
+  await cache.init();
+  const core = await cache.save({
+    id: "forge-1.21.4-54.1.16",
+    loader: "forge",
+    minecraft_version: "1.21.4",
+    build: "1.21.4-54.1.16",
+    provider: "test",
+    source: "test",
+    file_path: path.join(root, "installer.jar"),
+    sha256: "test",
+    checksum_source: "local",
+    size: 0,
+    kind: "installer",
+    launch: { type: "installer", install_args: ["--installServer"] },
+    downloaded_at: new Date().toISOString()
+  });
+  const installDir = cache.installDir(core);
+  await fs.mkdir(path.join(installDir, "libraries", "net", "minecraftforge", "forge", "1.21.4-54.1.16"), { recursive: true });
+  await fs.writeFile(path.join(installDir, ".craft-runner-installed"), "done");
+  await fs.writeFile(path.join(installDir, "manifest.json"), JSON.stringify({ core_id: core.id }));
+  await fs.writeFile(path.join(installDir, "run.sh"), "#!/bin/sh\n");
+  await fs.writeFile(path.join(installDir, "user_jvm_args.txt"), "");
+  await fs.writeFile(path.join(installDir, "forge-1.21.4-54.1.16-shim.jar"), "shim");
+  await fs.writeFile(
+    path.join(installDir, "libraries", "net", "minecraftforge", "forge", "1.21.4-54.1.16", "unix_args.txt"),
+    "-Djava.net.preferIPv6Addresses=system -jar forge-1.21.4-54.1.16-shim.jar"
+  );
+
+  const installation = new CoreInstallationManager(cache);
+  const server = serverMetadata(root, core.id);
+  server.loader = "forge";
+  server.minecraft_version = "1.21.4";
+  await fs.mkdir(server.server_dir, { recursive: true });
+
+  const materialized = await installation.materialize(core, server);
+
+  assert.equal(materialized.launch.cwd, server.server_dir);
+  assert.deepEqual(materialized.launch.args, [
+    "@user_jvm_args.txt",
+    "@libraries/net/minecraftforge/forge/1.21.4-54.1.16/unix_args.txt",
+    "nogui"
+  ]);
+  assert.equal(await fs.readFile(path.join(server.server_dir, "forge-1.21.4-54.1.16-shim.jar"), "utf8"), "shim");
+});
+
 function testConfig(root: string): CraftRunnerConfig {
   return {
     root_dir: path.join(root, "home"),
