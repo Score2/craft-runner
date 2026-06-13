@@ -130,7 +130,18 @@ export class ServerManager {
   async list(): Promise<ServerMetadata[]> {
     await this.init();
     const servers = await this.store.listServers();
-    return Promise.all(servers.map((server) => this.refreshStatus(server)));
+    const refreshed = await Promise.all(servers.map((server) => this.refreshStatus(server)));
+    const knownEndpointNames = new Set(refreshed
+      .map((server) => server.debug_agent?.endpoint_name)
+      .filter((value): value is string => Boolean(value)));
+    const knownIds = new Set(refreshed.map((server) => server.id));
+    const discovered = await this.discoverDebugAgents();
+    const external = discovered
+      .filter((agent) => agent.alive === true)
+      .filter((agent) => !knownEndpointNames.has(String(agent.endpoint_name)))
+      .map((agent) => this.discoveredAgentToServer(agent, this.discoveredAgentServerId(agent)))
+      .filter((server) => !knownIds.has(server.id));
+    return refreshed.concat(external);
   }
 
   async stats(): Promise<Record<string, unknown>> {
@@ -200,7 +211,13 @@ export class ServerManager {
   async get(id: string): Promise<ServerMetadata> {
     await this.init();
     const server = await this.store.getServer(id);
-    if (!server) throw new Error(`server not found: ${id}`);
+    if (!server) {
+      const discovered = await this.getDiscoveredAgentServer(id);
+      if (discovered) {
+        return discovered;
+      }
+      throw new Error(`server not found: ${id}`);
+    }
     return this.refreshStatus(server);
   }
 
@@ -524,12 +541,40 @@ export class ServerManager {
     }
     const serverId = id ?? String(agent.id);
     validateServerId(serverId);
+    const server = this.discoveredAgentToServer(agent, serverId);
+    addEvent(server, "debug_agent_discovered", "Registered manually installed Craft Runner agent", {
+      endpoint_name: agent.endpoint_name,
+      mailbox_dir: agent.mailbox_dir,
+      socket_path: agent.socket_path,
+      alive: agent.alive === true
+    });
+    await this.store.saveServer(server);
+    return server;
+  }
+
+  private async getDiscoveredAgentServer(id: string): Promise<ServerMetadata | undefined> {
+    const agents = await this.discoverDebugAgents();
+    const agent = agents.find((item) =>
+      item.endpoint_name === id ||
+      item.id === id ||
+      this.discoveredAgentServerId(item) === id
+    );
+    return agent ? this.discoveredAgentToServer(agent, this.discoveredAgentServerId(agent)) : undefined;
+  }
+
+  private discoveredAgentServerId(agent: Record<string, unknown>): string {
+    const endpointName = sanitizeIdPart(String(agent.endpoint_name ?? ""));
+    const raw = typeof agent.id === "string" ? agent.id : `agent-${endpointName}`;
+    const id = sanitizeIdPart(raw);
+    return id || `agent-${endpointName || "unknown"}`;
+  }
+
+  private discoveredAgentToServer(agent: Record<string, unknown>, id: string): ServerMetadata {
     const now = new Date().toISOString();
     const port = Number(agent.server_port);
     const serverDir = typeof agent.server_dir === "string" ? agent.server_dir : String(agent.endpoint);
-    const alive = Boolean(agent.alive);
-    const server: ServerMetadata = {
-      id: serverId,
+    return {
+      id,
       kind: "external",
       server_dir: serverDir,
       base_dir: this.config.root_dir,
@@ -544,7 +589,7 @@ export class ServerManager {
       port: Number.isFinite(port) ? port : 0,
       java_args: [],
       memory: { xms: "", xmx: "" },
-      status: alive ? "running" : "stopped",
+      status: agent.alive === true ? "running" : "stopped",
       created_at: now,
       updated_at: now,
       debug_agent: {
@@ -554,18 +599,10 @@ export class ServerManager {
         endpoint_name: String(agent.endpoint_name),
         agent_jar: "",
         agent_jars: [],
-        installed_at: now
+        installed_at: typeof agent.last_seen_at === "string" ? agent.last_seen_at : now
       },
       events: []
     };
-    addEvent(server, "debug_agent_discovered", "Registered manually installed Craft Runner agent", {
-      endpoint_name: agent.endpoint_name,
-      mailbox_dir: agent.mailbox_dir,
-      socket_path: agent.socket_path,
-      alive
-    });
-    await this.store.saveServer(server);
-    return server;
   }
 
   async installDebugAgent(id: string, agentJarPath: string): Promise<ServerMetadata> {

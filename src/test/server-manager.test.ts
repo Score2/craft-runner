@@ -272,6 +272,49 @@ test("ServerManager discovers manually installed agents and registers them as ex
   );
 });
 
+test("ServerManager lists active discovered agents as temporary external servers", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "craft-runner-list-agent-test-"));
+  const config = testConfig(root);
+  const manager = new ServerManager(config);
+  const endpointName = "41236";
+  const endpoint = path.join(config.agents_dir, endpointName);
+  const serverDir = path.join(root, "manual-server");
+  await fs.mkdir(endpoint, { recursive: true });
+  await fs.writeFile(path.join(endpoint, "config.json"), JSON.stringify({
+    token: "manual-token",
+    endpointName,
+    pollIntervalMs: 250
+  }));
+  await fs.writeFile(path.join(endpoint, "endpoint.json"), JSON.stringify({
+    schema: "craft-runner-agent-endpoint",
+    version: 1,
+    endpointName,
+    endpoint,
+    platform: "bukkit",
+    serverPort: 41236,
+    serverDir,
+    token: "manual-token",
+    lastSeenAt: new Date().toISOString(),
+    transports: [{ type: "file-mailbox", path: endpoint }]
+  }));
+
+  const listed = await manager.list();
+  assert.equal(listed.length, 1);
+  assert.equal(listed[0].id, "agent-41236");
+  assert.equal(listed[0].kind, "external");
+  assert.equal(listed[0].managed, false);
+  assert.equal(listed[0].deletable, false);
+  assert.equal(listed[0].status, "running");
+  assert.equal(listed[0].server_dir, serverDir);
+  assert.equal(listed[0].debug_agent?.mailbox_dir, endpoint);
+
+  const byGeneratedId = await manager.get("agent-41236");
+  assert.equal(byGeneratedId.port, 41236);
+  const byEndpointName = await manager.get(endpointName);
+  assert.equal(byEndpointName.id, "agent-41236");
+  assert.equal((await manager.store.listServers()).length, 0);
+});
+
 test("ServerManager marks stale external agents stopped even when mailbox directory remains", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "craft-runner-stale-agent-test-"));
   const config = testConfig(root);
