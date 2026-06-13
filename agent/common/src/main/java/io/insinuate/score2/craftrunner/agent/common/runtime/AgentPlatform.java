@@ -23,7 +23,7 @@ public interface AgentPlatform {
     }
 
     default int serverPort() {
-        return -1;
+        return AgentPortResolver.resolve(serverObject());
     }
 
     default Object debugPlatformApi() {
