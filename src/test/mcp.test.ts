@@ -33,6 +33,8 @@ test("MCP server exposes craft-runner tools over stdio", async () => {
     assert.equal(names.has("hot_load_plugin"), true);
     assert.equal(names.has("hot_unload_plugin"), true);
     assert.equal(names.has("hot_reload_plugin"), true);
+    assert.match(tools.tools.find((tool) => tool.name === "send_server_command")?.description ?? "", /do not use tmux/);
+    assert.match(tools.tools.find((tool) => tool.name === "debug_eval_js")?.description ?? "", /send_server_command/);
 
     const docs = await client.callTool({ name: "debug_agent_api", arguments: {} });
     const content = docs.content as Array<{ type: string; text?: string }>;
@@ -40,6 +42,7 @@ test("MCP server exposes craft-runner tools over stdio", async () => {
     assert.match(text, /cr\.common/);
     assert.match(text, /cr\.platform/);
     assert.match(text, /hot_load_plugin/);
+    assert.match(text, /send_server_command/);
 
     const stats = await client.callTool({ name: "get_stats", arguments: {} });
     const statsContent = stats.content as Array<{ type: string; text?: string }>;

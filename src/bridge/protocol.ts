@@ -8,6 +8,7 @@ import { getJavaInfo, listJavaInstallations, validateJavaForMinecraft } from "..
 import { getAgentJar } from "../debug/agentJar.js";
 import { ensureDir } from "../lib/fsx.js";
 import { packageInfo } from "../lib/packageInfo.js";
+import { boundedLineCount, eventsView, fileListView, logLineView, serverView, serversView } from "../server/views.js";
 
 export const BRIDGE_PROTOCOL = {
   major: 1,
@@ -53,6 +54,7 @@ export function bridgeVersion(): BridgeVersion {
       "server.lifecycle",
       "server.files",
       "server.logs",
+      "server.command",
       "core.cache",
       "java.discovery",
       "debug.agent",
@@ -103,11 +105,11 @@ export async function dispatchBridgeTool(
     case "create_server":
       return manager.create(clean as any);
     case "list_servers":
-      return manager.list();
+      return serversView(await manager.list(), clean);
     case "get_stats":
       return manager.stats();
     case "get_server":
-      return manager.get(required(clean.server_id, "server_id"));
+      return serverView(await manager.get(required(clean.server_id, "server_id")), clean);
     case "start_server":
       return manager.start(required(clean.server_id, "server_id"));
     case "stop_server":
@@ -147,7 +149,7 @@ export async function dispatchBridgeTool(
     case "remove_server_file":
       return manager.removeFile(required(clean.server_id, "server_id"), required(clean.target_path, "target_path"));
     case "list_server_files":
-      return manager.listFiles(required(clean.server_id, "server_id"), clean.path);
+      return fileListView(await manager.listFiles(required(clean.server_id, "server_id"), clean.path), clean);
     case "list_core_providers":
       return CORE_PROVIDERS;
     case "search_cores":
@@ -167,15 +169,15 @@ export async function dispatchBridgeTool(
     case "verify_core":
       return manager.coreCache.verify(required(clean.core_id, "core_id"));
     case "tail_server_log":
-      return manager.tailLog(required(clean.server_id, "server_id"), clean.lines, clean.file);
+      return manager.tailLog(required(clean.server_id, "server_id"), boundedLineCount(clean.lines, 120), clean.file);
     case "read_server_log":
-      return manager.readLog(required(clean.server_id, "server_id"), clean);
+      return logLineView(await manager.readLog(required(clean.server_id, "server_id"), clean), { max_lines: clean.max_lines });
     case "wait_server_ready":
       return manager.waitReady(required(clean.server_id, "server_id"), clean.timeout_ms);
     case "send_server_command":
-      return manager.sendCommand(required(clean.server_id, "server_id"), required(clean.command, "command"));
+      return manager.sendCommand(required(clean.server_id, "server_id"), required(clean.command, "command"), clean.timeout_ms);
     case "get_server_events":
-      return manager.getEvents(required(clean.server_id, "server_id"));
+      return eventsView(await manager.getEvents(required(clean.server_id, "server_id")), clean);
     case "list_java_installations":
       return listJavaInstallations();
     case "get_java_info":
@@ -201,7 +203,7 @@ export async function dispatchBridgeTool(
       return {
         namespace: "cr",
         loader: server?.loader,
-        rule: "Use cr.common for cross-platform Java/Minecraft reflection helpers. Use cr.platform only after checking platform capabilities because methods depend on the loaded server platform.",
+        rule: "Use cr.common for cross-platform Java/Minecraft reflection helpers. Use cr.platform only after checking platform capabilities because methods depend on the loaded server platform. Never use debug_eval_js just to run a console command; call send_server_command.",
         remote_bridge: true,
         note: "This response is served through craftr bridge. For full local examples, call debug_agent_api without remote_host or inspect project docs."
       };

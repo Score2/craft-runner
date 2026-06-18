@@ -84,6 +84,11 @@ public final class CraftRunnerBukkitPlugin extends JavaPlugin implements AgentPl
     }
 
     @Override
+    public Object dispatchConsoleCommand(String command) {
+        return commandResult(command, Bukkit.dispatchCommand(Bukkit.getConsoleSender(), command));
+    }
+
+    @Override
     public Future<Object> callMainThread(Callable<Object> task, ExecutorService fallbackExecutor) {
         Future<Object> foliaFuture = callFoliaGlobalScheduler(task);
         if (foliaFuture != null) {

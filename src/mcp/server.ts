@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { ServerManager } from "../server/manager.js";
+import { boundedLineCount, eventsView, fileListView, logLineView, serverView, serversView } from "../server/views.js";
 import { CORE_PROVIDERS, resolveCore, searchCores } from "../core/providers.js";
 import { getJavaInfo, listJavaInstallations, validateJavaForMinecraft } from "../java/discovery.js";
 import { getAgentJar } from "../debug/agentJar.js";
@@ -41,11 +42,11 @@ export function createMcpServer(manager = new ServerManager()): McpServer {
       },
       async (args: any) => {
         if (args.remote_host) {
-          return jsonResult(await new RemoteBridge(args.remote_host).request(name, args)) as any;
+          return jsonResult(shapeMcpResult(name, args, await new RemoteBridge(args.remote_host).request(name, args))) as any;
         }
         const localArgs = { ...args };
         delete localArgs.remote_host;
-        return jsonResult(await handler(localArgs)) as any;
+        return jsonResult(shapeMcpResult(name, localArgs, await handler(localArgs))) as any;
       }
     );
   };
@@ -70,15 +71,20 @@ export function createMcpServer(manager = new ServerManager()): McpServer {
     start: z.boolean().optional()
   }, (args) => manager.create(args as any));
 
-  tool("list_servers", "List known local test servers.", {}, () => manager.list());
+  tool("list_servers", "List known local test servers and active discovered agent endpoints. Returns compact metadata by default; use get_server_events for full event history.", {
+    include_events: z.boolean().optional(),
+    event_limit: z.number().int().optional()
+  }, async (args) => serversView(await manager.list(), args));
 
   tool("get_stats", "Show current craft-runner statistics, including disk usage, cached cores, server counts, and running server count.", {}, () => manager.stats());
 
-  tool("get_server", "Get one server status and metadata.", {
-    server_id: z.string()
-  }, (args) => manager.get(args.server_id));
+  tool("get_server", "Get one server status and compact metadata. Event history is summarized by default; use get_server_events for paged lifecycle events.", {
+    server_id: z.string(),
+    include_events: z.boolean().optional(),
+    event_limit: z.number().int().optional()
+  }, async (args) => serverView(await manager.get(args.server_id), args));
 
-  tool("start_server", "Start a local server. Uses a managed tmux session when tmux is available, with detached background process fallback.", {
+  tool("start_server", "Start a local server. craft-runner may use tmux internally for lifecycle isolation, but agents should not operate tmux directly; use MCP tools for lifecycle and commands.", {
     server_id: z.string()
   }, (args) => manager.start(args.server_id));
 
@@ -141,10 +147,12 @@ export function createMcpServer(manager = new ServerManager()): McpServer {
     target_path: z.string()
   }, (args) => manager.removeFile(args.server_id, args.target_path));
 
-  tool("list_server_files", "List files inside a server.", {
+  tool("list_server_files", "List files inside a server with pagination to avoid oversized MCP responses.", {
     server_id: z.string(),
-    path: z.string().optional()
-  }, (args) => manager.listFiles(args.server_id, args.path));
+    path: z.string().optional(),
+    offset: z.number().int().optional(),
+    limit: z.number().int().optional()
+  }, async (args) => fileListView(await manager.listFiles(args.server_id, args.path), args));
 
   tool("list_core_providers", "List available Minecraft server core providers.", {}, () => CORE_PROVIDERS);
 
@@ -179,30 +187,36 @@ export function createMcpServer(manager = new ServerManager()): McpServer {
     server_id: z.string(),
     lines: z.number().int().optional(),
     file: z.string().optional()
-  }, (args) => manager.tailLog(args.server_id, args.lines, args.file));
+  }, (args) => manager.tailLog(args.server_id, boundedLineCount(args.lines, 120), args.file));
 
-  tool("read_server_log", "Read a line range or byte range from a server log.", {
+  tool("read_server_log", "Read a line range or byte range from a server log. Prefer offset/limit byte reads or small line windows; line output is capped by max_lines to avoid MCP truncation.", {
     server_id: z.string(),
     from_line: z.number().int().optional(),
     to_line: z.number().int().optional(),
     offset: z.number().int().optional(),
     limit: z.number().int().optional(),
+    max_lines: z.number().int().optional(),
     file: z.string().optional()
-  }, (args) => manager.readLog(args.server_id, args));
+  }, async (args) => logLineView(await manager.readLog(args.server_id, args), { max_lines: args.max_lines }));
 
   tool("wait_server_ready", "Wait for a server ready log line.", {
     server_id: z.string(),
     timeout_ms: z.number().int().optional()
   }, (args) => manager.waitReady(args.server_id, args.timeout_ms));
 
-  tool("send_server_command", "Send a command through RCON when enabled, otherwise through craft-runner's managed console stdin for tmux-launched servers.", {
+  tool("send_server_command", "Run a Minecraft/proxy console command through craft-runner. This is the required command path: do not use tmux, tmux send-keys, or debug_eval_js for command dispatch. Uses the debug agent socket/mailbox first, with legacy RCON or managed stdin only as backward-compatible fallbacks.", {
     server_id: z.string(),
-    command: z.string()
-  }, (args) => manager.sendCommand(args.server_id, args.command));
+    command: z.string(),
+    timeout_ms: z.number().int().optional()
+  }, (args) => manager.sendCommand(args.server_id, args.command, args.timeout_ms));
 
-  tool("get_server_events", "Get lifecycle events for a server.", {
-    server_id: z.string()
-  }, (args) => manager.getEvents(args.server_id));
+  tool("get_server_events", "Get paged lifecycle events for a server. Use limit/tail instead of requesting full history to avoid MCP response truncation.", {
+    server_id: z.string(),
+    offset: z.number().int().optional(),
+    limit: z.number().int().optional(),
+    tail: z.number().int().optional(),
+    type: z.string().optional()
+  }, async (args) => eventsView(await manager.getEvents(args.server_id), args));
 
   tool("list_java_installations", "List discovered Java installations.", {}, () => listJavaInstallations());
 
@@ -245,7 +259,7 @@ export function createMcpServer(manager = new ServerManager()): McpServer {
     return debugAgentApiDocs(serverMeta?.loader);
   });
 
-  tool("debug_eval_js", "Execute JavaScript inside a running test server through the debug agent. The agent preloads GraalJS on startup and logs executions to the server console with [CRA-REMOTE]. Prefer the documented DSL: cr.common is cross-platform; cr.platform is platform-specific. Call debug_agent_api for examples before complex scripts.", {
+  tool("debug_eval_js", "Execute JavaScript inside a running test server through the debug agent. Do not use this to run console commands; call send_server_command instead. The agent preloads GraalJS on startup and logs executions to the server console with [CRA-REMOTE]. Prefer the documented DSL: cr.common is cross-platform; cr.platform is platform-specific. Call debug_agent_api for examples before complex scripts.", {
     server_id: z.string(),
     code: z.string(),
     thread: z.enum(["main", "async"]).optional(),
@@ -257,7 +271,7 @@ export function createMcpServer(manager = new ServerManager()): McpServer {
     timeout_ms: args.timeout_ms
   }));
 
-  tool("debug_eval_js_file", "Execute a local JavaScript file inside a running test server through the debug agent. The agent preloads GraalJS on startup and logs executions to the server console with [CRA-REMOTE]. Scripts can use cr.common for cross-platform helpers and cr.platform for platform-specific helpers.", {
+  tool("debug_eval_js_file", "Execute a local JavaScript file inside a running test server through the debug agent. Do not use this to run console commands; call send_server_command instead. The agent preloads GraalJS on startup and logs executions to the server console with [CRA-REMOTE]. Scripts can use cr.common for cross-platform helpers and cr.platform for platform-specific helpers.", {
     server_id: z.string(),
     file: z.string(),
     thread: z.enum(["main", "async"]).optional(),
@@ -374,7 +388,7 @@ function debugAgentApiDocs(loader?: string): Record<string, unknown> {
   ];
   return {
     namespace: "cr",
-    rule: "Use cr.common for cross-platform Java/Minecraft reflection helpers. Use cr.platform only after checking platform capabilities because these methods depend on the loaded server platform.",
+    rule: "Use cr.common for cross-platform Java/Minecraft reflection helpers. Use cr.platform only after checking platform capabilities because these methods depend on the loaded server platform. Never use debug_eval_js just to run a console command; call the MCP send_server_command tool.",
     file_endpoint: {
       layout: "~/.craft-runner/agents/<server-port>/",
       protocol: "Unix-like systems prefer agent.sock when available; otherwise write request JSON files into requests/ and read response JSON files from responses/. Windows uses file mailbox fallback.",
@@ -386,6 +400,7 @@ function debugAgentApiDocs(loader?: string): Record<string, unknown> {
     },
     runtime_notes: [
       "debug_eval_js defaults to thread=main. Use thread=async only for non-server-state work.",
+      "For console commands, always call send_server_command. Do not dispatch commands through JS and do not interact with tmux.",
       "The agent starts GraalJS library download/loading asynchronously during plugin startup.",
       "If JS library loading fails, a server operator can run /cra js-status and /cra js-load after fixing network/cache issues.",
       "Remote MCP executions are logged on the server console with the [CRA-REMOTE] prefix.",
@@ -434,7 +449,6 @@ function debugAgentApiDocs(loader?: string): Record<string, unknown> {
         examples: [
           "cr.platform.onlinePlayerNames()",
           "cr.platform.isFolia()",
-          "cr.platform.dispatchCommand('say hello from craft-runner')",
           "cr.platform.itemStack('DIAMOND', 1)"
         ]
       },
@@ -463,13 +477,85 @@ function debugAgentApiDocs(loader?: string): Record<string, unknown> {
   };
 }
 
+function shapeMcpResult(toolName: string, args: Record<string, any>, value: unknown): unknown {
+  if (isRecord(value) && isRecord(value.remote) && "result" in value) {
+    return {
+      ...value,
+      result: shapeToolResult(toolName, args, value.result)
+    };
+  }
+  return shapeToolResult(toolName, args, value);
+}
+
+function shapeToolResult(toolName: string, args: Record<string, any>, value: unknown): unknown {
+  if (toolName === "list_servers" && Array.isArray(value) && value.every(isServerMetadataLike)) {
+    return serversView(value as any, args);
+  }
+  if (toolName === "get_server" && isServerMetadataLike(value)) {
+    return serverView(value as any, args);
+  }
+  if (toolName === "get_server_events" && Array.isArray(value)) {
+    return eventsView(value as any, args);
+  }
+  if (toolName === "list_server_files" && Array.isArray(value)) {
+    return fileListView(value as string[], args);
+  }
+  if ((toolName === "read_server_log" || toolName === "tail_server_log") && isRecord(value)) {
+    return logLineView(value as any, { max_lines: args.max_lines });
+  }
+  return value;
+}
+
 function jsonResult(value: unknown) {
+  const text = JSON.stringify(value, null, 2);
+  const maxBytes = maxMcpTextBytes();
+  if (Buffer.byteLength(text, "utf8") <= maxBytes) {
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text
+        }
+      ]
+    };
+  }
+  const preview = truncateUtf8(text, Math.max(1024, maxBytes - 2048));
   return {
     content: [
       {
         type: "text" as const,
-        text: JSON.stringify(value, null, 2)
+        text: JSON.stringify({
+          truncated: true,
+          original_bytes: Buffer.byteLength(text, "utf8"),
+          max_text_bytes: maxBytes,
+          hint: "The MCP result was too large for a single tool response. Retry with limit, offset, tail, include_events=false, or a narrower query.",
+          preview
+        }, null, 2)
       }
     ]
   };
+}
+
+function maxMcpTextBytes(): number {
+  const value = Number(process.env.CRAFT_RUNNER_MCP_MAX_TEXT_BYTES ?? 60000);
+  return Number.isFinite(value) && value >= 4096 ? Math.floor(value) : 60000;
+}
+
+function truncateUtf8(value: string, maxBytes: number): string {
+  const buffer = Buffer.from(value, "utf8");
+  if (buffer.byteLength <= maxBytes) {
+    return value;
+  }
+  return buffer.subarray(0, maxBytes).toString("utf8").replace(/\uFFFD$/u, "") + "\n... truncated by craft-runner ...";
+}
+
+function isServerMetadataLike(value: unknown): boolean {
+  return isRecord(value)
+    && typeof value.id === "string"
+    && typeof value.server_dir === "string"
+    && Array.isArray(value.events);
+}
+
+function isRecord(value: unknown): value is Record<string, any> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

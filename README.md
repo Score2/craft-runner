@@ -207,6 +207,12 @@ For npm Trusted Publishing, configure npm to trust:
 - `hot_unload_plugin`
 - `hot_reload_plugin`
 
+`send_server_command` is the supported path for Minecraft/proxy console
+commands. It uses the debug agent socket on Unix-like systems, the file mailbox
+fallback on Windows, and only falls back to legacy RCON or managed stdin for
+older/agentless servers. MCP clients should not interact with tmux directly and
+should not use `debug_eval_js` just to dispatch a command.
+
 ## JS Debug Agent
 
 For plugin/mod capable servers, craft-runner can install a local debug agent.

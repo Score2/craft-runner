@@ -93,6 +93,45 @@ test("ServerManager installs debug agent and exchanges JS requests through file 
   });
 });
 
+test("ServerManager sends console commands through debug agent mailbox first", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "craft-runner-agent-command-test-"));
+  const fakeCore = path.join(root, "fake-server.jar");
+  const fakeAgent = path.join(root, "fake-agent.jar");
+  await fs.writeFile(fakeCore, "fake jar");
+  await fs.writeFile(fakeAgent, "fake agent jar");
+
+  const manager = new ServerManager(testConfig(root));
+  const server = await manager.create({
+    id: "agent-command-test",
+    core_ref: {
+      loader: "custom",
+      minecraft_version: "1.20.4",
+      path: fakeCore
+    }
+  });
+  const installed = await manager.installDebugAgent(server.id, fakeAgent);
+  assert.ok(installed.debug_agent?.token);
+
+  const responder = respondToFirstDebugRequest(installed.debug_agent.mailbox_dir, {
+    ok: true,
+    result: {
+      action: "command",
+      platform: "bukkit",
+      command: "say hello",
+      handled: true
+    },
+    durationMs: 3
+  });
+  const response = await manager.sendCommand(server.id, "/say hello", 3000);
+  const requestId = await responder;
+  const request = JSON.parse(await fs.readFile(path.join(installed.debug_agent.mailbox_dir, "requests", `${requestId}.json`), "utf8"));
+
+  assert.equal(response.transport, "debug_agent");
+  assert.equal(response.response, "Command dispatched through debug agent.");
+  assert.equal(request.language, "command");
+  assert.equal(request.command, "say hello");
+});
+
 test("ServerManager sends structured hot plugin requests through file mailbox", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "craft-runner-hot-plugin-test-"));
   const fakeCore = path.join(root, "fake-server.jar");
@@ -558,7 +597,7 @@ function testConfig(root: string): CraftRunnerConfig {
     agents_dir: path.join(root, "home", "agents"),
     server_base_dir: path.join(root, "servers-base"),
     state_dir: path.join(root, "state"),
-    user_agent: "craft-runner-test/1.0.2",
+    user_agent: "craft-runner-test/1.0.3",
     ports: {
       minecraft_start: 41000,
       minecraft_end: 41020,

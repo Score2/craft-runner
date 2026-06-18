@@ -108,4 +108,15 @@ public final class CraftRunnerVelocityPlugin implements AgentPlatform {
         }
         return hotPluginOperations;
     }
+
+    @Override
+    public Object dispatchConsoleCommand(String command) {
+        try {
+            return commandResult(command, proxy.getCommandManager()
+                .executeAsync(proxy.getConsoleCommandSource(), command)
+                .get());
+        } catch (Exception error) {
+            throw new IllegalStateException("Failed to dispatch Velocity console command: " + command, error);
+        }
+    }
 }

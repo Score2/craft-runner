@@ -14,6 +14,7 @@ public final class DebugRequest {
     private String thread = "main";
     private long timeoutMs = 3000L;
     private String code = "";
+    private String command = "";
     private String action = "";
     private String path = "";
     private String pluginName = "";

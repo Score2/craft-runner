@@ -88,4 +88,9 @@ public final class CraftRunnerBungeePlugin extends Plugin implements AgentPlatfo
         }
         return hotPluginOperations;
     }
+
+    @Override
+    public Object dispatchConsoleCommand(String command) {
+        return commandResult(command, getProxy().getPluginManager().dispatchCommand(getProxy().getConsole(), command));
+    }
 }

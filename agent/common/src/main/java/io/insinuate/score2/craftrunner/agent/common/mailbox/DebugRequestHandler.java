@@ -33,7 +33,9 @@ public final class DebugRequestHandler {
         if (!config.token().equals(request.token())) {
             return DebugResponse.failure(request.id(), "invalid token");
         }
-        if (!"js".equalsIgnoreCase(request.language()) && !"hot_plugin".equalsIgnoreCase(request.language())) {
+        if (!"js".equalsIgnoreCase(request.language())
+            && !"hot_plugin".equalsIgnoreCase(request.language())
+            && !"command".equalsIgnoreCase(request.language())) {
             return DebugResponse.failure(request.id(), "unsupported language: " + request.language());
         }
         platform.remoteMessage(REMOTE_PREFIX + "Executing " + describe(request) + " request " + request.id());
@@ -76,6 +78,9 @@ public final class DebugRequestHandler {
         if ("hot_plugin".equalsIgnoreCase(request.language())) {
             return hotPluginExecutor.execute(request);
         }
+        if ("command".equalsIgnoreCase(request.language())) {
+            return platform.dispatchConsoleCommand(normalizeCommand(request.command()));
+        }
         return executor.execute(request.code());
     }
 
@@ -85,7 +90,21 @@ public final class DebugRequestHandler {
             String plugin = request.pluginName() == null || request.pluginName().isBlank() ? "" : " " + request.pluginName();
             return action + plugin;
         }
+        if ("command".equalsIgnoreCase(request.language())) {
+            return "command";
+        }
         return "js";
+    }
+
+    private String normalizeCommand(String command) {
+        String normalized = command == null ? "" : command.trim();
+        if (normalized.startsWith("/")) {
+            normalized = normalized.substring(1).trim();
+        }
+        if (normalized.isBlank()) {
+            throw new IllegalArgumentException("command is required");
+        }
+        return normalized;
     }
 
     private long elapsedMs(long started) {

@@ -467,23 +467,54 @@ export class ServerManager {
     return (await this.get(id)).events;
   }
 
-  async sendCommand(id: string, command: string): Promise<{ response: string; transport: "rcon" | "console_stdin" }> {
+  async sendCommand(
+    id: string,
+    command: string,
+    timeoutMs = 5000
+  ): Promise<{ response: string; transport: "debug_agent" | "rcon" | "console_stdin"; result?: unknown; fallback_reason?: string }> {
     const server = await this.get(id);
+    const normalized = normalizeServerCommand(command);
+    if (server.debug_agent?.token) {
+      try {
+        const response = await this.sendAgentRequest(server, {
+          language: "command",
+          thread: "main",
+          timeoutMs,
+          command: normalized
+        }, "command_sent", `Sent command through debug agent: ${normalized}`);
+        if (!isFailedAgentResponse(response)) {
+          return { response: agentCommandResponseText(response), transport: "debug_agent", result: response };
+        }
+        if (!canUseLegacyCommand(server)) {
+          return { response: agentCommandResponseText(response), transport: "debug_agent", result: response };
+        }
+        addEvent(server, "agent_command_fallback", "Debug agent command failed; falling back to legacy command transport", {
+          error: agentResponseError(response)
+        });
+      } catch (error) {
+        if (!canUseLegacyCommand(server)) {
+          throw error;
+        }
+        addEvent(server, "agent_command_fallback", "Debug agent command transport failed; falling back to legacy command transport", {
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+    }
     if (server.rcon_port && server.rcon_password) {
       const response = await sendRconCommand({
         host: server.host,
         port: server.rcon_port,
         password: server.rcon_password,
-        command
+        command: normalized
       });
-      addEvent(server, "command_sent", `Sent command through RCON: ${command}`, { transport: "rcon" });
+      addEvent(server, "command_sent", `Sent command through legacy RCON: ${normalized}`, { transport: "rcon" });
       await this.store.saveServer(server);
-      return { response, transport: "rcon" };
+      return { response, transport: "rcon", fallback_reason: server.debug_agent?.token ? "debug_agent_failed" : undefined };
     }
-    await writeConsoleCommand(server, command);
-    addEvent(server, "command_sent", `Sent command through managed console stdin: ${command}`, { transport: "console_stdin" });
+    await writeConsoleCommand(server, normalized);
+    addEvent(server, "command_sent", `Sent command through managed console stdin: ${normalized}`, { transport: "console_stdin" });
     await this.store.saveServer(server);
-    return { response: "", transport: "console_stdin" };
+    return { response: "", transport: "console_stdin", fallback_reason: server.debug_agent?.token ? "debug_agent_failed" : undefined };
   }
 
   async discoverDebugAgents(): Promise<Array<Record<string, unknown>>> {
@@ -1131,7 +1162,7 @@ async function isTmuxServerRunning(server: ServerMetadata): Promise<boolean> {
 
 async function writeConsoleCommand(server: ServerMetadata, command: string): Promise<void> {
   if (!server.console_stdin_path) {
-    throw new Error("server does not have a managed console stdin path; enable RCON or restart under tmux");
+    throw new Error("server does not have a debug agent endpoint, legacy RCON, or managed console stdin path for command dispatch");
   }
   if (!(await isServerProcessRunning(server))) {
     throw new Error("server is not running");
@@ -1143,6 +1174,48 @@ async function writeConsoleCommand(server: ServerMetadata, command: string): Pro
     command,
     server.console_stdin_path
   ], { timeout: 5000 });
+}
+
+function normalizeServerCommand(command: string): string {
+  let normalized = command.trim();
+  if (normalized.startsWith("/")) {
+    normalized = normalized.slice(1).trim();
+  }
+  if (!normalized) {
+    throw new Error("command is required");
+  }
+  return normalized;
+}
+
+function canUseLegacyCommand(server: ServerMetadata): boolean {
+  return Boolean((server.rcon_port && server.rcon_password) || server.console_stdin_path);
+}
+
+function isFailedAgentResponse(response: unknown): boolean {
+  return isRecord(response) && response.ok === false;
+}
+
+function agentResponseError(response: unknown): string | undefined {
+  return isRecord(response) && typeof response.error === "string" ? response.error : undefined;
+}
+
+function agentCommandResponseText(response: unknown): string {
+  if (!isRecord(response)) {
+    return "";
+  }
+  if (typeof response.error === "string") {
+    return response.error;
+  }
+  const result = response.result;
+  if (isRecord(result)) {
+    if (typeof result.message === "string") {
+      return result.message;
+    }
+    if (typeof result.handled === "boolean") {
+      return result.handled ? "Command dispatched through debug agent." : "Command was not handled by the server command manager.";
+    }
+  }
+  return "";
 }
 
 async function createNamedPipe(file: string): Promise<void> {
