@@ -73,11 +73,19 @@ test("installer core materialization includes root launch jars used by argfiles"
   const materialized = await installation.materialize(core, server);
 
   assert.equal(materialized.launch.cwd, server.server_dir);
-  assert.deepEqual(materialized.launch.args, [
-    "@user_jvm_args.txt",
-    "@libraries/net/minecraftforge/forge/1.21.4-54.1.16/unix_args.txt",
-    "nogui"
-  ]);
+  if (process.platform === "win32") {
+    assert.deepEqual(materialized.launch.args, [
+      "-jar",
+      "forge-1.21.4-54.1.16-shim.jar",
+      "nogui"
+    ]);
+  } else {
+    assert.deepEqual(materialized.launch.args, [
+      "@user_jvm_args.txt",
+      "@libraries/net/minecraftforge/forge/1.21.4-54.1.16/unix_args.txt",
+      "nogui"
+    ]);
+  }
   assert.equal(await fs.readFile(path.join(server.server_dir, "forge-1.21.4-54.1.16-shim.jar"), "utf8"), "shim");
 });
 
